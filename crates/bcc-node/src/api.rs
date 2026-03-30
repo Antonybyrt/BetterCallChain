@@ -16,6 +16,7 @@ pub fn router(state: NodeState) -> Router {
     Router::new()
         .route("/chain/tip",         get(get_tip))
         .route("/balance/:address",  get(get_balance))
+        .route("/utxos/:address",    get(get_utxos))
         .route("/tx",                post(post_tx))
         .route("/peers",             get(get_peers))
         .with_state(state)
@@ -38,6 +39,13 @@ struct BalanceResponse {
 #[derive(Serialize)]
 struct TxResponse {
     tx_hash: String,
+}
+
+#[derive(Serialize)]
+struct UtxoItem {
+    tx_hash: String,
+    index:   u32,
+    amount:  u64,
 }
 
 // ── Error wrapper ─────────────────────────────────────────────────────────────
@@ -80,6 +88,26 @@ async fn get_balance(
         .map_err(|e| NodeError::Validation(e.to_string()))?;
     let balance = state.utxo.balance(&addr).map_err(NodeError::Store)?;
     Ok(Json(BalanceResponse { address, balance }))
+}
+
+/// `GET /utxos/:address` — returns all unspent outputs owned by `address`.
+///
+/// Used by `bcc-client` for coin selection when building a transfer transaction.
+async fn get_utxos(
+    State(state):  State<NodeState>,
+    Path(address): Path<String>,
+) -> Result<Json<Vec<UtxoItem>>, AppError> {
+    let addr  = Address::validate(&address)
+        .map_err(|e| NodeError::Validation(e.to_string()))?;
+    let utxos = state.utxo.list_utxos(&addr).map_err(NodeError::Store)?;
+    Ok(Json(utxos
+        .into_iter()
+        .map(|(out_ref, output)| UtxoItem {
+            tx_hash: hex::encode(out_ref.tx_hash),
+            index:   out_ref.index,
+            amount:  output.amount,
+        })
+        .collect()))
 }
 
 /// `POST /tx` — validates and submits a transaction to the mempool.

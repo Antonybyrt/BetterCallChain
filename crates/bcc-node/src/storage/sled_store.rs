@@ -285,6 +285,31 @@ impl UtxoStore for SledStore {
                 })
             })
     }
+
+    fn list_utxos(&self, address: &Address) -> StoreResult<Vec<(TxOutRef, TxOutput)>> {
+        self.utxo
+            .iter()
+            .map(|res| res.map_err(|e| StoreError::Backend(e.to_string())))
+            .filter_map(|res| match res {
+                Err(e) => Some(Err(e)),
+                Ok((k, v)) => {
+                    let out_ref: TxOutRef = match decode(&k) {
+                        Ok(r)  => r,
+                        Err(e) => return Some(Err(e)),
+                    };
+                    let output: TxOutput = match decode(&v) {
+                        Ok(o)  => o,
+                        Err(e) => return Some(Err(e)),
+                    };
+                    if &output.address == address {
+                        Some(Ok((out_ref, output)))
+                    } else {
+                        None
+                    }
+                }
+            })
+            .collect()
+    }
 }
 
 // ── ValidatorStore ────────────────────────────────────────────────────────────

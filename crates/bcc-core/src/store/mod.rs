@@ -54,6 +54,11 @@ pub trait UtxoStore: Send + Sync {
 
     /// Returns the total spendable balance of an address across all its UTXOs.
     fn balance(&self, address: &Address) -> StoreResult<u64>;
+
+    /// Returns all unspent outputs owned by `address` as `(TxOutRef, TxOutput)` pairs.
+    ///
+    /// Used by the client for coin selection when building a transaction.
+    fn list_utxos(&self, address: &Address) -> StoreResult<Vec<(TxOutRef, TxOutput)>>;
 }
 
 /// Persistent storage interface for the validator registry.

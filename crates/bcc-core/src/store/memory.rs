@@ -126,6 +126,18 @@ impl UtxoStore for MemoryStore {
             .sum();
         Ok(total)
     }
+
+    fn list_utxos(&self, address: &Address) -> StoreResult<Vec<(TxOutRef, TxOutput)>> {
+        let guard = self
+            .utxo
+            .read()
+            .map_err(|e| crate::store::StoreError::Backend(e.to_string()))?;
+        Ok(guard
+            .iter()
+            .filter(|(_, output)| &output.address == address)
+            .map(|(out_ref, output)| (out_ref.clone(), output.clone()))
+            .collect())
+    }
 }
 
 impl ValidatorStore for MemoryStore {
