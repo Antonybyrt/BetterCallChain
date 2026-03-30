@@ -1,6 +1,6 @@
 # BetterCallChain
 
-A minimalist blockchain written in Rust using **Proof of Work** consensus.
+A minimalist blockchain written in Rust using **Proof of Stake** consensus.
 
 ## Getting Started
 
