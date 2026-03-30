@@ -126,6 +126,7 @@ Plain TCP with `LengthDelimitedCodec` (4-byte BE length + JSON, max 16 MiB per f
 |----------|----------|
 | `GET /chain/tip` | `{ height, hash }` |
 | `GET /balance/:address` | `{ address, balance }` |
+| `GET /utxos/:address` | `[{ tx_hash, index, amount }, …]` |
 | `POST /tx` | `{ tx_hash }` |
 | `GET /peers` | `["ip:port", ...]` |
 

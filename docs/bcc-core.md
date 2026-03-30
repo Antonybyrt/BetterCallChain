@@ -72,8 +72,11 @@ Three traits, two implementations:
 | Trait | Methods |
 |-------|---------|
 | `BlockStore` | `get_by_height`, `get_by_hash`, `insert`, `tip`, `iter_from` |
-| `UtxoStore` | `get`, `apply_block`, `rollback_block`, `balance` |
+| `UtxoStore` | `get`, `apply_block`, `rollback_block`, `balance`, `list_utxos` |
 | `ValidatorStore` | `get`, `all_active`, `upsert` |
+
+`list_utxos(address) -> Vec<(TxOutRef, TxOutput)>` — returns all unspent outputs
+for a given address. Used by `bcc-client` for coin selection.
 
 `MemoryStore` — in-memory impl using `BTreeMap` + `HashMap` behind `RwLock`. For tests only.
 `SledStore` — persistent impl backed by [sled](https://github.com/spacejam/sled), lives in `bcc-node` (see bcc-node.md).
