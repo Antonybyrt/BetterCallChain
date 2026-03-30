@@ -1,5 +1,6 @@
 [workspace]
 members = [
     "crates/bcc-core",
+    "crates/bcc-node",
 ]
 resolver = "2"

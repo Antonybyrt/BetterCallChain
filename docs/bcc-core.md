@@ -76,7 +76,7 @@ Three traits, two implementations:
 | `ValidatorStore` | `get`, `all_active`, `upsert` |
 
 `MemoryStore` — in-memory impl using `BTreeMap` + `HashMap` behind `RwLock`. For tests only.
-`SledStore` — persistent impl (planned in `bcc-node`).
+`SledStore` — persistent impl backed by [sled](https://github.com/spacejam/sled), lives in `bcc-node` (see bcc-node.md).
 
 ### `error`
 
