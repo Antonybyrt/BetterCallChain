@@ -18,6 +18,8 @@ pub enum StoreError {
 /// Convenience alias for storage results.
 pub type StoreResult<T> = Result<T, StoreError>;
 
+pub mod memory;
+
 /// Persistent storage interface for blocks.
 /// Implementations may be in-memory (tests) or on disk (sled).
 pub trait BlockStore: Send + Sync {

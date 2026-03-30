@@ -34,13 +34,38 @@ pub struct Block {
 }
 
 impl Block {
-    /// Computes the hash of this block's header.
+    /// Computes the hash of this block's header (signature excluded by design).
     pub fn hash(&self) -> BlockHash {
-        todo!()
+        let bytes = bincode::serialize(&self.header).expect("BlockHeader serialization is infallible");
+        crate::crypto::hash::sha256d(&bytes)
     }
 
-    /// Computes the Merkle root of a list of transactions.
-    pub fn compute_merkle_root(_txs: &[Transaction]) -> BlockHash {
-        todo!()
+    /// Computes a binary Merkle root from a slice of transactions.
+    /// Returns all-zeros for an empty transaction list.
+    /// Odd-length layers duplicate the last leaf (Bitcoin convention).
+    pub fn compute_merkle_root(txs: &[Transaction]) -> BlockHash {
+        if txs.is_empty() {
+            return [0u8; 32];
+        }
+
+        let mut layer: Vec<BlockHash> = txs.iter().map(|tx| tx.hash()).collect();
+
+        while layer.len() > 1 {
+            if layer.len() % 2 != 0 {
+                let last = *layer.last().expect("layer is non-empty");
+                layer.push(last);
+            }
+            layer = layer
+                .chunks(2)
+                .map(|pair| {
+                    let mut combined = [0u8; 64];
+                    combined[..32].copy_from_slice(&pair[0]);
+                    combined[32..].copy_from_slice(&pair[1]);
+                    crate::crypto::hash::sha256d(&combined)
+                })
+                .collect();
+        }
+
+        layer[0]
     }
 }
