@@ -1,6 +1,5 @@
-[package]
-name = "BetterCallChain"
-version = "0.1.0"
-edition = "2024"
-
-[dependencies]
+[workspace]
+members = [
+    "crates/bcc-core",
+]
+resolver = "2"
