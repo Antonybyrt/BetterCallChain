@@ -2,5 +2,6 @@
 members = [
     "crates/bcc-core",
     "crates/bcc-node",
+    "crates/bcc-client",
 ]
 resolver = "2"
