@@ -15,8 +15,8 @@ use crate::{error::NodeError, state::NodeState};
 pub fn router(state: NodeState) -> Router {
     Router::new()
         .route("/chain/tip",         get(get_tip))
-        .route("/balance/:address",  get(get_balance))
-        .route("/utxos/:address",    get(get_utxos))
+        .route("/balance/{address}",  get(get_balance))
+        .route("/utxos/{address}",    get(get_utxos))
         .route("/tx",                post(post_tx))
         .route("/peers",             get(get_peers))
         .with_state(state)

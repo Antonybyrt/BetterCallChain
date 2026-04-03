@@ -17,7 +17,7 @@ use bcc_node::{api, genesis, ibd, p2p, slot_ticker};
 #[command(name = "bcc-node", about = "BetterCallChain full node")]
 struct Cli {
     /// Path to the node configuration TOML file.
-    #[arg(short, long, default_value = "node.toml")]
+    #[arg(short, long)]
     config: String,
 }
 

@@ -16,7 +16,8 @@ impl Default for ClientConfig {
     fn default() -> Self {
         Self {
             keystore_path: default_keystore_path(),
-            node_url: "http://127.0.0.1:8080".to_string(),
+            node_url: std::env::var("RPC_URL")
+                .unwrap_or_else(|_| "http://127.0.0.1:8080".to_string()),
         }
     }
 }

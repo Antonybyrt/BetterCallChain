@@ -7,16 +7,21 @@ A minimalist blockchain written in Rust using **Proof of Stake** consensus.
 ```bash
 git clone <repo>
 cd BetterCallChain
-cargo run
+
+# Generate node configs + genesis.toml for the 5-node test network
+./scripts/gen-test-configs.sh
+
+# Start the network
+docker compose up --build
 ```
 
 ## Workspace
 
-| Crate | Role |
-|-------|------|
-| `bcc-core` | Pure logic library — types, crypto, consensus, validation, store traits |
-| `bcc-node` | Full node binary — P2P, slot ticker, HTTP API, sled persistence |
-| `bcc-client` | CLI wallet — key management, transaction building, node interaction |
+| Crate | Role | Docs |
+|-------|------|------|
+| `bcc-core` | Pure logic library — types, crypto, consensus, validation, store traits | [docs/bcc-core.md](docs/bcc-core.md) |
+| `bcc-node` | Full node binary — P2P, slot ticker, HTTP API, sled persistence | [docs/bcc-node.md](docs/bcc-node.md) |
+| `bcc-client` | CLI wallet — key management, transaction building, node interaction | [docs/bcc-client.md](docs/bcc-client.md) |
 
 ## Address Format
 

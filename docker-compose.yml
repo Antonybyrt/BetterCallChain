@@ -1,0 +1,95 @@
+version: '3.8'
+
+services:
+  node1:
+    build: .
+    container_name: bcc-node1
+    command: ["bcc-node", "--config", "/app/config/node1.toml"]
+    volumes:
+      - ./config:/app/config:ro
+      - bcc_data1:/data
+    ports:
+      - "8081:8080" # Maps Node 1 API to host port 8081
+    networks:
+      bcc-network:
+        ipv4_address: 172.30.0.2
+    restart: always
+
+  node2:
+    build: .
+    container_name: bcc-node2
+    command: ["bcc-node", "--config", "/app/config/node2.toml"]
+    volumes:
+      - ./config:/app/config:ro
+      - bcc_data2:/data
+    ports:
+      - "8082:8080" # Maps Node 2 API to host port 8082
+    networks:
+      bcc-network:
+        ipv4_address: 172.30.0.3
+    restart: always
+    depends_on:
+      - node1
+
+  node3:
+    build: .
+    container_name: bcc-node3
+    command: ["bcc-node", "--config", "/app/config/node3.toml"]
+    volumes:
+      - ./config:/app/config:ro
+      - bcc_data3:/data
+    ports:
+      - "8083:8080" # Maps Node 3 API to host port 8083
+    networks:
+      bcc-network:
+        ipv4_address: 172.30.0.4
+    restart: always
+    depends_on:
+      - node1
+
+  node4:
+    build: .
+    container_name: bcc-node4
+    command: ["bcc-node", "--config", "/app/config/node4.toml"]
+    volumes:
+      - ./config:/app/config:ro
+      - bcc_data4:/data
+    ports:
+      - "8084:8080" # Maps Node 4 API to host port 8084
+    networks:
+      bcc-network:
+        ipv4_address: 172.30.0.5
+    restart: always
+    depends_on:
+      - node1
+
+  node5:
+    build: .
+    container_name: bcc-node5
+    command: ["bcc-node", "--config", "/app/config/node5.toml"]
+    volumes:
+      - ./config:/app/config:ro
+      - bcc_data5:/data
+    ports:
+      - "8085:8080" # Maps Node 5 API to host port 8085
+    networks:
+      bcc-network:
+        ipv4_address: 172.30.0.6
+    restart: always
+    depends_on:
+      - node1
+
+volumes:
+  bcc_data1:
+  bcc_data2:
+  bcc_data3:
+  bcc_data4:
+  bcc_data5:
+
+networks:
+  bcc-network:
+    name: bcc-network
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.30.0.0/16
