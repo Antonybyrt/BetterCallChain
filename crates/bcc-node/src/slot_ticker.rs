@@ -10,7 +10,7 @@ use bcc_core::{
 };
 use ed25519_dalek::Signer;
 use tokio_util::sync::CancellationToken;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 use crate::state::NodeState;
 
@@ -96,12 +96,15 @@ pub async fn run_slot_ticker(state: NodeState, cancel: CancellationToken) {
         };
 
         let time_remaining = slot_end - now;
+        debug!(slot, "slot tick");
 
         if let Some(proposer) = elect_proposer(slot as u64, &tip_hash, &validators) {
             if proposer.address == state.config.my_address
                 && time_remaining > MIN_PROPOSE_WINDOW_SECS
             {
                 propose_block(&state, tip_height, tip_hash, slot as u64, now).await;
+            } else {
+                debug!(slot, proposer = %proposer.address, "slot: not proposer, skipping");
             }
         }
 
@@ -124,6 +127,8 @@ async fn propose_block(
     // Drain mempool; release the lock before signing.
     let txs: Vec<Transaction> = {
         let mempool = state.mempool.lock().await;
+        let mempool_size = mempool.len();
+        info!(slot, mempool_size, "slot: draining mempool for block");
         mempool.drain(MAX_TXS_PER_BLOCK)
     };
 
@@ -163,8 +168,9 @@ async fn propose_block(
 
     let height = block.header.height;
     let hash   = hex::encode(block.hash());
+    let tx_count = block.txs.len();
 
     // Notify all peer tasks via the broadcast channel.
     let _ = state.new_block.send(block);
-    info!(height, %hash, slot, "proposed block");
+    info!(height, %hash, slot, txs = tx_count, proposer = %state.config.my_address, "proposed block");
 }

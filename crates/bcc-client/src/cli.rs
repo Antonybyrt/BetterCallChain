@@ -2,6 +2,9 @@ use std::path::PathBuf;
 
 use bcc_core::types::address::Address;
 use clap::{Parser, Subcommand};
+use ed25519_dalek::SigningKey;
+use rand::RngExt;
+use serde::Serialize;
 
 use crate::{
     config::ClientConfig,
@@ -21,6 +24,10 @@ use crate::{
     about   = "BetterCallChain wallet and chain interaction tool",
 )]
 pub struct Cli {
+    /// Node HTTP base URL. Overrides the BCC_RPC_URL env var and the default (http://127.0.0.1:8080).
+    #[arg(long, global = true, value_name = "URL")]
+    pub rpc_url: Option<String>,
+
     #[command(subcommand)]
     pub command: Commands,
 }
@@ -37,9 +44,6 @@ pub enum Commands {
     Balance {
         /// BetterCallChain address (must start with `bcs1`).
         address: String,
-        /// Node HTTP base URL (default: http://127.0.0.1:8080).
-        #[arg(long, value_name = "URL")]
-        node: Option<String>,
     },
     /// Send tokens from the local wallet to a recipient address.
     Send {
@@ -50,14 +54,16 @@ pub enum Commands {
         /// Path to the keystore file.
         #[arg(long, value_name = "PATH")]
         keystore: Option<PathBuf>,
-        /// Node HTTP base URL.
-        #[arg(long, value_name = "URL")]
-        node: Option<String>,
     },
     /// Chain information commands.
     Chain {
         #[command(subcommand)]
         sub: ChainCommands,
+    },
+    /// Node configuration commands.
+    Node {
+        #[command(subcommand)]
+        sub: NodeCommands,
     },
 }
 
@@ -87,10 +93,53 @@ pub enum WalletCommands {
 #[derive(Subcommand)]
 pub enum ChainCommands {
     /// Show the current chain tip (height and hash).
-    Tip {
-        /// Node HTTP base URL.
-        #[arg(long, value_name = "URL")]
-        node: Option<String>,
+    Tip,
+}
+
+/// Node sub-commands.
+#[derive(Subcommand)]
+pub enum NodeCommands {
+    /// Generate a node configuration TOML file with a fresh or existing signing key.
+    ///
+    /// If --keystore is provided, the signing key is read from the (decrypted) keystore.
+    /// Otherwise, a fresh Ed25519 keypair is generated and the address + public key are
+    /// printed so they can be added to genesis.toml.
+    Init {
+        /// Path to write the generated node config file.
+        #[arg(short, long, value_name = "PATH")]
+        output: PathBuf,
+
+        /// Bootstrap peers (repeat for multiple, e.g. --peer 172.30.0.3:8333).
+        #[arg(long, value_name = "ADDR")]
+        peer: Vec<String>,
+
+        /// Use signing key from an existing keystore instead of generating a new one.
+        #[arg(long, value_name = "PATH")]
+        keystore: Option<PathBuf>,
+
+        /// P2P listen address.
+        #[arg(long, value_name = "ADDR", default_value = "0.0.0.0:8333")]
+        listen_addr: String,
+
+        /// HTTP API listen address.
+        #[arg(long, value_name = "ADDR", default_value = "0.0.0.0:8080")]
+        http_addr: String,
+
+        /// Path to the sled database directory inside the container/host.
+        #[arg(long, value_name = "PATH", default_value = "/data/node")]
+        sled_path: String,
+
+        /// Path to the genesis TOML file.
+        #[arg(long, value_name = "PATH", default_value = "/app/config/genesis.toml")]
+        genesis_path: String,
+
+        /// Slot duration in seconds.
+        #[arg(long, value_name = "SECS", default_value = "5")]
+        slot_duration: u64,
+
+        /// Maximum number of transactions in the mempool.
+        #[arg(long, value_name = "N", default_value = "10000")]
+        mempool_max_size: usize,
     },
 }
 
@@ -98,17 +147,28 @@ pub enum ChainCommands {
 
 /// Dispatches the parsed CLI command to the appropriate handler.
 pub async fn run(cli: Cli) -> Result<(), ClientError> {
+    let node_url = cli.rpc_url.unwrap_or_else(|| ClientConfig::default().node_url);
+
     match cli.command {
         Commands::Wallet { sub } => match sub {
             WalletCommands::New { keystore }  => cmd_wallet_new(keystore).await,
             WalletCommands::Show { keystore } => cmd_wallet_show(keystore),
         },
-        Commands::Balance { address, node } => cmd_balance(address, node).await,
-        Commands::Send { to, amount, keystore, node } => {
-            cmd_send(to, amount, keystore, node).await
+        Commands::Balance { address } => cmd_balance(address, node_url).await,
+        Commands::Send { to, amount, keystore } => {
+            cmd_send(to, amount, keystore, node_url).await
         }
         Commands::Chain { sub } => match sub {
-            ChainCommands::Tip { node } => cmd_chain_tip(node).await,
+            ChainCommands::Tip => cmd_chain_tip(node_url).await,
+        },
+        Commands::Node { sub } => match sub {
+            NodeCommands::Init {
+                output, peer, keystore, listen_addr, http_addr,
+                sled_path, genesis_path, slot_duration, mempool_max_size,
+            } => cmd_node_init(
+                output, peer, keystore, listen_addr, http_addr,
+                sled_path, genesis_path, slot_duration, mempool_max_size,
+            ),
         },
     }
 }
@@ -165,10 +225,9 @@ fn cmd_wallet_show(keystore_flag: Option<PathBuf>) -> Result<(), ClientError> {
 }
 
 /// `balance <address>` — fetches the confirmed UTXO balance from the node.
-async fn cmd_balance(address: String, node_flag: Option<String>) -> Result<(), ClientError> {
+async fn cmd_balance(address: String, node_url: String) -> Result<(), ClientError> {
     Address::validate(&address)?;
-    let node_url = node_flag.unwrap_or_else(|| ClientConfig::default().node_url);
-    let rpc      = RpcClient::new(node_url);
+    let rpc = RpcClient::new(node_url);
     let resp     = rpc.get_balance(&address).await?;
     println!("Address: {}", resp.address);
     println!("Balance: {}", resp.balance);
@@ -177,13 +236,12 @@ async fn cmd_balance(address: String, node_flag: Option<String>) -> Result<(), C
 
 /// `send <to> <amount>` — builds, signs, and submits a transfer transaction.
 async fn cmd_send(
-    to:           String,
-    amount:       u64,
+    to:            String,
+    amount:        u64,
     keystore_flag: Option<PathBuf>,
-    node_flag:    Option<String>,
+    node_url:      String,
 ) -> Result<(), ClientError> {
     let path = keystore_flag.unwrap_or_else(|| ClientConfig::default().keystore_path);
-    let node_url = node_flag.unwrap_or_else(|| ClientConfig::default().node_url);
 
     let passphrase = rpassword::prompt_password("Passphrase: ")
         .map_err(ClientError::KeystoreIo)?;
@@ -211,11 +269,84 @@ async fn cmd_send(
 }
 
 /// `chain tip` — displays the current chain tip height and block hash.
-async fn cmd_chain_tip(node_flag: Option<String>) -> Result<(), ClientError> {
-    let node_url = node_flag.unwrap_or_else(|| ClientConfig::default().node_url);
+async fn cmd_chain_tip(node_url: String) -> Result<(), ClientError> {
     let rpc  = RpcClient::new(node_url);
     let resp = rpc.get_tip().await?;
     println!("Height: {}", resp.height);
     println!("Hash:   {}", resp.hash);
+    Ok(())
+}
+
+// ── Node config serialization ─────────────────────────────────────────────────
+
+#[derive(Serialize)]
+struct NodeConfigToml {
+    listen_addr:        String,
+    bootstrap_peers:    Vec<String>,
+    slot_duration_secs: u64,
+    http_addr:          String,
+    sled_path:          String,
+    mempool_max_size:   usize,
+    genesis_path:       String,
+    my_address:         String,
+    my_signing_key:     String,
+}
+
+/// `node init` — generates a node configuration TOML file.
+#[allow(clippy::too_many_arguments)]
+fn cmd_node_init(
+    output:           PathBuf,
+    peers:            Vec<String>,
+    keystore_flag:    Option<PathBuf>,
+    listen_addr:      String,
+    http_addr:        String,
+    sled_path:        String,
+    genesis_path:     String,
+    slot_duration:    u64,
+    mempool_max_size: usize,
+) -> Result<(), ClientError> {
+    let (signing_key, address) = match keystore_flag {
+        Some(path) => {
+            let passphrase = rpassword::prompt_password("Keystore passphrase: ")
+                .map_err(ClientError::KeystoreIo)?;
+            let sk  = KeystoreFile::load_and_decrypt(&path, &passphrase)?;
+            let addr = Address::from_pubkey_bytes(sk.verifying_key().as_bytes());
+            (sk, addr)
+        }
+        None => {
+            let mut seed = [0u8; 32];
+            rand::rng().fill(&mut seed);
+            let sk   = SigningKey::from_bytes(&seed);
+            let addr = Address::from_pubkey_bytes(sk.verifying_key().as_bytes());
+            println!("Generated new keypair.");
+            println!("Address: {addr}");
+            println!("Pubkey:  {}", hex::encode(sk.verifying_key().as_bytes()));
+            println!("(Add address + pubkey to genesis.toml validators before starting the node.)");
+            (sk, addr)
+        }
+    };
+
+    let cfg = NodeConfigToml {
+        listen_addr,
+        bootstrap_peers:    peers,
+        slot_duration_secs: slot_duration,
+        http_addr,
+        sled_path,
+        mempool_max_size,
+        genesis_path,
+        my_address:     address.to_string(),
+        my_signing_key: hex::encode(signing_key.to_bytes()),
+    };
+
+    let toml_str = toml::to_string_pretty(&cfg)
+        .map_err(|e| ClientError::Config(e.to_string()))?;
+
+    if let Some(parent) = output.parent() {
+        if !parent.as_os_str().is_empty() {
+            std::fs::create_dir_all(parent)?;
+        }
+    }
+    std::fs::write(&output, toml_str)?;
+    println!("Config written to {}", output.display());
     Ok(())
 }

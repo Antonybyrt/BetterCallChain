@@ -1,0 +1,938 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BetterCallChain Visualizer</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg:#0f1117; --surface:#1a1d27; --border:#2a2d3e;
+  --accent:#6366f1; --text:#e2e8f0; --muted:#64748b;
+  --green:#22c55e; --blue:#3b82f6; --orange:#f97316;
+  --red:#ef4444; --yellow:#eab308; --purple:#a855f7;
+}
+body { font-family:'Segoe UI',system-ui,sans-serif; background:var(--bg); color:var(--text); height:100vh; display:flex; flex-direction:column; overflow:hidden; }
+
+/* Status bar */
+#status-bar { display:flex; align-items:center; gap:12px; padding:5px 14px; background:var(--surface); border-bottom:1px solid var(--border); font-size:11px; color:var(--muted); flex-shrink:0; flex-wrap:wrap; }
+#conn-dot { width:7px; height:7px; border-radius:50%; background:var(--red); display:inline-block; margin-right:3px; }
+#conn-dot.ok { background:var(--green); }
+.nbadge { background:var(--border); padding:1px 5px; border-radius:3px; font-size:10px; font-family:monospace; }
+.nbadge b { color:var(--green); }
+
+/* Tabs */
+#tab-bar { display:flex; background:var(--surface); border-bottom:1px solid var(--border); flex-shrink:0; }
+.tab-btn { padding:9px 18px; background:none; border:none; border-bottom:2px solid transparent; color:var(--muted); cursor:pointer; font-size:13px; font-weight:500; transition:all .15s; }
+.tab-btn:hover { color:var(--text); }
+.tab-btn.active { color:var(--accent); border-bottom-color:var(--accent); }
+
+/* Description bar under tabs */
+.tab-desc { padding:6px 14px; background:#12151f; border-bottom:1px solid var(--border); font-size:11px; color:var(--muted); flex-shrink:0; line-height:1.6; }
+.tab-desc strong { color:#94a3b8; }
+.legend-dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin:0 3px 0 8px; vertical-align:middle; }
+
+/* Tab panels */
+.tab-panel { display:none; flex:1; overflow:hidden; flex-direction:column; }
+.tab-panel.active { display:flex; }
+
+/* Common cards */
+.card { background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:10px 14px; }
+.card-title { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); margin-bottom:8px; }
+
+/* ── Tab 1: Flow (Canvas) ──────────────────────────────────────────── */
+#flow-controls { display:flex; gap:10px; align-items:center; padding:6px 14px; background:var(--surface); border-bottom:1px solid var(--border); flex-shrink:0; font-size:12px; flex-wrap:wrap; }
+#flow-controls label { color:var(--muted); white-space:nowrap; }
+#flow-controls input[type=range] { width:80px; accent-color:var(--accent); }
+#follow-btn { padding:3px 10px; background:var(--accent); color:#fff; border:none; border-radius:4px; cursor:pointer; font-size:11px; }
+#follow-btn.off { background:var(--border); color:var(--muted); }
+#flow-count { color:var(--muted); font-size:11px; margin-left:auto; }
+#canvas-wrap { flex:1; overflow:hidden; position:relative; }
+#swimlane { display:block; width:100%; height:100%; cursor:crosshair; }
+
+/* ── Tab 2: Blocks ────────────────────────────────────────────────── */
+#blocks-wrap { flex:1; overflow-y:auto; }
+table { width:100%; border-collapse:collapse; font-size:12px; }
+th { text-align:left; padding:5px 9px; color:var(--muted); border-bottom:1px solid var(--border); font-size:10px; text-transform:uppercase; letter-spacing:.06em; position:sticky; top:0; background:var(--bg); z-index:1; }
+td { padding:6px 9px; border-bottom:1px solid var(--border); }
+tr:hover td { background:rgba(255,255,255,.025); }
+.ni { display:inline-flex; width:17px; height:17px; border-radius:50%; margin:0 1px; font-size:9px; align-items:center; justify-content:center; font-weight:700; }
+.ni.p { background:var(--accent); color:#fff; }
+.ni.y { background:var(--green); color:#000; }
+.ni.n { background:var(--border); color:var(--muted); }
+
+/* ── Tab 3: Mempool ───────────────────────────────────────────────── */
+#mp-grid { display:grid; grid-template-columns:repeat(5,1fr); gap:10px; padding:0 0 10px; flex-shrink:0; }
+.mp-card { text-align:center; }
+.mp-bar-wrap { height:100px; display:flex; align-items:flex-end; justify-content:center; margin:8px auto; width:44px; }
+.mp-bar { width:100%; background:var(--accent); border-radius:3px 3px 0 0; min-height:2px; transition:height .3s ease; }
+.mp-label { font-size:10px; font-weight:700; color:var(--muted); margin-bottom:4px; }
+.mp-size { font-size:14px; font-weight:700; color:var(--text); }
+.mp-stats { font-size:10px; color:var(--muted); margin-top:4px; line-height:1.8; }
+.mp-stats .ok { color:var(--green); } .mp-stats .bad { color:var(--red); }
+#mp-events { flex:1; overflow-y:auto; }
+#mp-list { list-style:none; font-size:11px; }
+#mp-list li { padding:4px 0; border-bottom:1px solid var(--border); display:flex; gap:6px; align-items:baseline; }
+
+/* ── Tab 4: Network ───────────────────────────────────────────────── */
+#net-wrap { display:flex; gap:12px; flex:1; overflow:hidden; padding:2px 0; }
+#svg-wrap { flex-shrink:0; }
+#peer-svg { display:block; }
+#net-right { flex:1; display:flex; flex-direction:column; gap:10px; overflow:hidden; }
+.net-section { overflow-y:auto; }
+.peer-row { display:flex; justify-content:space-between; padding:5px 0; border-bottom:1px solid var(--border); font-size:11px; }
+.peer-count { color:var(--green); font-weight:600; }
+#gossip-list { list-style:none; font-size:10px; color:var(--muted); }
+#gossip-list li { padding:2px 0; border-bottom:1px solid var(--border); }
+
+/* ── Tab 5: Scenarios ─────────────────────────────────────────────── */
+#sc-wrap { display:flex; gap:12px; flex:1; overflow:hidden; }
+#sc-btns { flex-shrink:0; display:flex; flex-direction:column; gap:6px; width:200px; }
+.sc-btn { padding:10px 12px; background:var(--surface); border:1px solid var(--border); border-radius:6px; color:var(--text); cursor:pointer; font-size:12px; text-align:left; line-height:1.4; }
+.sc-btn:hover { border-color:var(--accent); }
+.sc-btn .sc-name { font-weight:600; display:block; }
+.sc-btn .sc-desc { font-size:10px; color:var(--muted); display:block; margin-top:2px; }
+.sc-btn.running { border-color:var(--yellow); }
+.sc-btn.pass    { border-color:var(--green); }
+.sc-btn.fail    { border-color:var(--red); }
+.sc-btn.running .sc-name { color:var(--yellow); }
+.sc-btn.pass    .sc-name { color:var(--green); }
+.sc-btn.fail    .sc-name { color:var(--red); }
+#sc-feed { flex:1; background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:10px; overflow-y:auto; font-size:11px; font-family:monospace; }
+#sc-list { list-style:none; }
+#sc-list li { padding:2px 0; display:flex; gap:6px; border-bottom:1px solid var(--border); }
+.s-run { color:var(--yellow); } .s-pass { color:var(--green); } .s-fail { color:var(--red); }
+.s-prog { color:var(--blue); } .s-start { color:var(--muted); }
+
+/* Dialog */
+dialog { background:var(--surface); border:1px solid var(--border); border-radius:8px; color:var(--text); padding:18px; max-width:460px; width:90vw; }
+dialog::backdrop { background:rgba(0,0,0,.7); }
+.dlg-title { font-weight:600; margin-bottom:10px; }
+.dlg-row { display:flex; gap:8px; margin:3px 0; font-size:12px; }
+.dlg-key { color:var(--muted); min-width:80px; flex-shrink:0; }
+.dlg-val { word-break:break-all; }
+.dlg-close { margin-top:14px; padding:5px 14px; background:var(--accent); color:#fff; border:none; border-radius:4px; cursor:pointer; }
+</style>
+</head>
+<body>
+
+<div id="status-bar">
+  <span><span id="conn-dot"></span><span id="conn-txt">Connexion…</span></span>
+  <span id="ev-count">0 événements</span>
+  <span id="node-hts"></span>
+</div>
+
+<div id="tab-bar">
+  <button class="tab-btn active" data-tab="flow">① Event Flow</button>
+  <button class="tab-btn" data-tab="blocks">② Propagation Blocs</button>
+  <button class="tab-btn" data-tab="mempool">③ Mempool</button>
+  <button class="tab-btn" data-tab="network">④ Réseau P2P</button>
+  <button class="tab-btn" data-tab="scenarios">⑤ Scénarios de test</button>
+</div>
+
+<!-- ── Descriptions (changent avec l'onglet) ──────────────────────── -->
+<div class="tab-desc" id="desc-flow">
+  <strong>Event Flow</strong> — Timeline en temps réel. Chaque nœud est divisé en <strong>4 sous-lignes</strong> par type :
+  <span class="legend-dot" style="background:#22c55e"></span><strong>bloc</strong> (BlockProposed / BlockFromPeer)
+  <span class="legend-dot" style="background:#3b82f6"></span><strong>tx</strong> (mempool accept/reject, gossip)
+  <span class="legend-dot" style="background:#7c3aed"></span><strong>slot</strong> (ticker / proposeur élu)
+  <span class="legend-dot" style="background:#f97316"></span><strong>pair</strong> (connexions P2P, IBD)
+  · Les ticks SlotTick sont des barres verticales grises. Cliquer sur un point = détails.
+</div>
+<div class="tab-desc" id="desc-blocks" style="display:none">
+  <strong>Propagation des blocs</strong> — Suivi de chaque bloc produit sur le réseau.
+  <strong>[P]</strong> = nœud proposeur · <strong>[✓]</strong> = bloc reçu · <strong>[?]</strong> = en attente
+  · <em>Spread</em> = délai entre le proposeur et le dernier nœud à recevoir le bloc.
+</div>
+<div class="tab-desc" id="desc-mempool" style="display:none">
+  <strong>Mempool</strong> — Pool de transactions non confirmées de chaque nœud.
+  La barre indique la taille relative du pool (max 10 000 TXs configuré).
+  <strong>+N</strong> = acceptées · <strong>–N</strong> = rejetées · <strong>évict N</strong> = évictions (pool plein, TX de moindre valeur).
+</div>
+<div class="tab-desc" id="desc-network" style="display:none">
+  <strong>Réseau P2P</strong> — Graphe des 5 validateurs.
+  Les arêtes = connexions TCP actives maintenues par le connecteur P2P.
+  Pulsation <span style="color:var(--green)">●</span> = propagation de bloc · <span style="color:var(--blue)">●</span> = gossip TX.
+  Hauteur affichée sous chaque nœud = dernier bloc connu.
+</div>
+<div class="tab-desc" id="desc-scenarios" style="display:none">
+  <strong>Scénarios de test</strong> — Déclenche un test depuis l'UI et observe les événements en direct.
+  Chaque scénario publie des étapes dans le flux d'événements (onglet ①).
+  Le résultat PASS/FAIL est déterminé par les assertions du code Rust côté serveur.
+</div>
+
+<!-- ── Panels ─────────────────────────────────────────────────────── -->
+<div class="tab-panel active" id="panel-flow">
+  <div id="flow-controls">
+    <label>Fenêtre : <input type="range" id="w-range" min="15" max="300" value="60"> <span id="w-val">60s</span></label>
+    <label>px/s : <input type="range" id="p-range" min="5" max="80" value="15"> <span id="p-val">15</span></label>
+    <button id="follow-btn">⟶ Suivre</button>
+    <span id="flow-count"></span>
+  </div>
+  <div id="canvas-wrap">
+    <canvas id="swimlane"></canvas>
+  </div>
+</div>
+
+<div class="tab-panel" id="panel-blocks">
+  <div id="blocks-wrap">
+    <table>
+      <thead><tr>
+        <th>Hauteur</th><th>Hash</th><th>Proposeur</th><th>TXs</th>
+        <th>node1</th><th>node2</th><th>node3</th><th>node4</th><th>node5</th>
+        <th>Spread</th>
+      </tr></thead>
+      <tbody id="blocks-body"></tbody>
+    </table>
+  </div>
+</div>
+
+<div class="tab-panel" id="panel-mempool">
+  <div class="card" style="margin:10px;flex-shrink:0;padding:8px 14px;">
+    <div id="mp-grid"></div>
+  </div>
+  <div id="mp-events" class="card" style="margin:0 10px 10px;flex:1;">
+    <div class="card-title">Derniers événements mempool</div>
+    <ul id="mp-list"></ul>
+  </div>
+</div>
+
+<div class="tab-panel" id="panel-network">
+  <div id="net-wrap" style="padding:10px;">
+    <div id="svg-wrap" class="card" style="padding:8px;">
+      <svg id="peer-svg" width="340" height="340" viewBox="0 0 340 340"></svg>
+    </div>
+    <div id="net-right">
+      <div class="card net-section">
+        <div class="card-title">Connexions actives</div>
+        <div id="peer-rows"></div>
+      </div>
+      <div class="card net-section" style="flex:1;min-height:0;">
+        <div class="card-title">Gossip récent</div>
+        <ul id="gossip-list"></ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="tab-panel" id="panel-scenarios">
+  <div id="sc-wrap" style="padding:10px;">
+    <div id="sc-btns">
+      <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px;">Cliquer pour lancer</div>
+      <button class="sc-btn" data-sc="single_transfer">
+        <span class="sc-name">Single Transfer</span>
+        <span class="sc-desc">Envoie 100k tokens, vérifie sur 5 nœuds en &lt;40s</span>
+      </button>
+      <button class="sc-btn" data-sc="concurrent_sends">
+        <span class="sc-name">Concurrent Sends</span>
+        <span class="sc-desc">5 TXs simultanées vers 5 destinataires différents</span>
+      </button>
+      <button class="sc-btn" data-sc="double_spend">
+        <span class="sc-name">Double Spend Attack</span>
+        <span class="sc-desc">5 TXs identiques (même UTXO) → exactement 1 doit passer</span>
+      </button>
+      <button class="sc-btn" data-sc="mempool_flood">
+        <span class="sc-name">Mempool Flood</span>
+        <span class="sc-desc">30 TXs rapides → observe les évictions et le drain</span>
+      </button>
+      <button class="sc-btn" data-sc="chain_consistency">
+        <span class="sc-name">Chain Consistency</span>
+        <span class="sc-desc">Après 10 TXs concurrentes, tous les nœuds doivent converger</span>
+      </button>
+      <button class="sc-btn" data-sc="validator_rotation">
+        <span class="sc-name">Validator Rotation</span>
+        <span class="sc-desc">75s d'observation → ≥3 blocs produits (vivacité PoS)</span>
+      </button>
+    </div>
+    <div id="sc-feed">
+      <div style="color:var(--muted);font-size:11px;margin-bottom:8px;">
+        Les étapes s'affichent ici en temps réel pendant l'exécution.
+        Les événements apparaissent aussi dans l'onglet ① Event Flow.
+      </div>
+      <ul id="sc-list"></ul>
+    </div>
+  </div>
+</div>
+
+<dialog id="ev-dialog">
+  <div class="dlg-title" id="dlg-title">Détails de l'événement</div>
+  <div id="dlg-fields"></div>
+  <button class="dlg-close" onclick="document.getElementById('ev-dialog').close()">Fermer</button>
+</dialog>
+
+<script>
+'use strict';
+// ── Constants ────────────────────────────────────────────────────────
+const NODES = ['node1','node2','node3','node4','node5'];
+const LABEL_W = 52;
+
+// Sub-lane layout inside each node band
+// 4 sub-lanes, each 13px tall, 1px gap between them, 14px node label on top, 4px separator at bottom
+const SUBLANE_H    = 13;  // height of one sub-lane row
+const SUBLANE_GAP  = 1;   // vertical gap between sub-lanes
+const NODE_LABEL_H = 14;  // top strip showing the node name
+const NODE_SEP     = 4;   // separator between node bands
+const NUM_SUBLANES = 4;
+const NODE_H = NODE_LABEL_H + NUM_SUBLANES*SUBLANE_H + (NUM_SUBLANES-1)*SUBLANE_GAP + NODE_SEP;
+
+// Sub-lane definitions — order matters (index 0 = top row in each band)
+const SUBLANES = [
+  { name:'bloc',  label:'●bloc',  col:'#22c55e',
+    kinds:new Set(['BlockProposed','BlockFromPeer','BlockIgnored']) },
+  { name:'tx',    label:'●tx',    col:'#3b82f6',
+    kinds:new Set(['TxAccepted','ApiTxAccepted','TxGossipAccepted','TxRejected','TxEvicted','MempoolDrain','ApiTxRejected']) },
+  { name:'slot',  label:'●slot',  col:'#7c3aed',
+    kinds:new Set(['SlotTick','SlotNotProposer']) },
+  { name:'pair',  label:'●pair',  col:'#f97316',
+    kinds:new Set(['PeerConnected','PeerDisconnected','NodeStarting','IbdComplete','IbdStarting','IbdBatch','P2pListening','ScenarioEvent','Raw']) },
+];
+
+function getSublane(kind) {
+  for (let i=0; i<SUBLANES.length; i++) if (SUBLANES[i].kinds.has(kind)) return i;
+  return SUBLANES.length-1;
+}
+const MAX_EVENTS = 2000;
+const MAX_BLOCKS = 60;
+const MAX_MP_LOG = 40;
+const MAX_GOSSIP = 20;
+const RENDER_THROTTLE_MS = 80;  // max ~12fps per tab
+const MAX_POOL = 10000;
+
+// Node pentagon positions in 340x340 SVG
+const NODE_POS = {
+  node1: {x:170,y:28},  node2: {x:316,y:138},
+  node3: {x:260,y:308}, node4: {x:80,y:308},  node5: {x:24,y:138}
+};
+const NODE_COLORS = ['#6366f1','#22c55e','#3b82f6','#f97316','#a855f7'];
+
+const EVENT_COLOR = {
+  BlockProposed:'#22c55e', BlockFromPeer:'#4ade80',
+  TxAccepted:'#3b82f6', ApiTxAccepted:'#60a5fa', TxGossipAccepted:'#93c5fd',
+  PeerConnected:'#f97316', PeerDisconnected:'#fb923c',
+  SlotTick:'#1e293b', SlotNotProposer:'#334155', MempoolDrain:'#7c3aed',
+  TxRejected:'#ef4444', TxEvicted:'#f97316',
+  BlockIgnored:'#475569', IbdComplete:'#a855f7',
+  ScenarioEvent:'#eab308', NodeStarting:'#94a3b8',
+};
+function ecolor(kind) { return EVENT_COLOR[kind] || '#64748b'; }
+
+// ── State ─────────────────────────────────────────────────────────────
+const S = {
+  events: [],            // WsEnvelope[]
+  totalEvents: 0,
+  nodeHeights: Object.fromEntries(NODES.map(n=>[n,0])),
+  // blocks
+  blocks: new Map(),     // height -> {hash,proposer,txs,slot,producedBy,receivedBy,ts}
+  // mempool
+  mp: Object.fromEntries(NODES.map(n=>[n,{pool:0,ok:0,rej:0,ev:0}])),
+  mpLog: [],
+  // network
+  peers: Object.fromEntries(NODES.map(n=>[n,new Set()])),
+  gossip: [],
+  peersDirty: true,
+  // scenarios
+  scenarios: {},
+  // swimlane state
+  windowSecs: 60,
+  pxPerSec: 15,
+  follow: true,
+  swimStart: 0,
+  lastDrawnIdx: 0,
+};
+
+// ── Render scheduler (dirty flags + throttle) ─────────────────────────
+const dirty = Object.fromEntries(['flow','blocks','mempool','network','scenarios'].map(t=>[t,false]));
+const lastRender = {};
+let rafPending = false;
+let activeTab = 'flow';
+
+function markDirty(tab) {
+  dirty[tab] = true;
+  if (!rafPending) {
+    rafPending = true;
+    requestAnimationFrame(flushRender);
+  }
+}
+
+function flushRender() {
+  rafPending = false;
+  const now = performance.now();
+  if (dirty[activeTab]) {
+    const elapsed = now - (lastRender[activeTab] || 0);
+    if (elapsed >= RENDER_THROTTLE_MS) {
+      doRender(activeTab);
+      lastRender[activeTab] = now;
+      dirty[activeTab] = false;
+    } else {
+      // reschedule
+      setTimeout(() => { dirty[activeTab] = true; markDirty(activeTab); },
+                 RENDER_THROTTLE_MS - elapsed);
+    }
+  }
+}
+
+function doRender(tab) {
+  if (tab === 'flow')      drawSwimlane(false);
+  if (tab === 'blocks')    renderBlocks();
+  if (tab === 'mempool')   renderMempool();
+  if (tab === 'network')   renderNetwork();
+  if (tab === 'scenarios') renderScenarios();
+}
+
+// ── WebSocket ─────────────────────────────────────────────────────────
+let ws, reconnDelay = 1000;
+// Batch: collect events for one microtask tick before processing
+let pendingBatch = [], batchTimer = null;
+
+function connect() {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  ws = new WebSocket(`${proto}://${location.host}/ws`);
+  ws.onopen = () => {
+    document.getElementById('conn-dot').className = 'ok';
+    document.getElementById('conn-txt').textContent = 'Connecté';
+    reconnDelay = 1000;
+  };
+  ws.onclose = () => {
+    document.getElementById('conn-dot').className = '';
+    document.getElementById('conn-txt').textContent = 'Reconnexion…';
+    setTimeout(connect, reconnDelay);
+    reconnDelay = Math.min(reconnDelay*2, 30000);
+  };
+  ws.onmessage = e => {
+    let msg; try { msg = JSON.parse(e.data); } catch { return; }
+    if (msg.ctrl) return;
+    pendingBatch.push(msg);
+    if (!batchTimer) batchTimer = setTimeout(processBatch, 16);
+  };
+}
+
+function processBatch() {
+  batchTimer = null;
+  const batch = pendingBatch;
+  pendingBatch = [];
+  let needsFlow=false, needsBlocks=false, needsMp=false, needsNet=false, needsSc=false;
+
+  for (const env of batch) {
+    S.totalEvents++;
+    // Circular buffer: drop oldest when full
+    if (S.events.length >= MAX_EVENTS) S.events.splice(0, 200);
+    S.events.push(env);
+
+    const k = env.event.kind;
+
+    // Heights
+    if (k==='BlockProposed'||k==='BlockFromPeer'||k==='ApiGetTip') {
+      const h = env.event.height||0;
+      if (h > S.nodeHeights[env.node]) { S.nodeHeights[env.node]=h; updateHeights(); }
+    }
+
+    // Blocks
+    if (k==='BlockProposed') {
+      if (!S.blocks.has(env.event.height)) {
+        S.blocks.set(env.event.height, {
+          height:env.event.height, hash:env.event.hash, proposer:env.event.proposer,
+          txs:env.event.txs, slot:env.event.slot,
+          producedBy:env.node, receivedBy:new Map([[env.node,new Date(env.ts)]]),
+          ts:new Date(env.ts)
+        });
+        needsBlocks=true;
+        if (S.blocks.size>MAX_BLOCKS) {
+          const oldest=Math.min(...S.blocks.keys());
+          S.blocks.delete(oldest);
+        }
+      }
+    }
+    if (k==='BlockFromPeer') {
+      const b = S.blocks.get(env.event.height);
+      if (b) { b.receivedBy.set(env.node,new Date(env.ts)); needsBlocks=true; }
+      else {
+        S.blocks.set(env.event.height, {
+          height:env.event.height,hash:env.event.hash,proposer:env.event.proposer,
+          txs:env.event.txs,slot:0,producedBy:null,
+          receivedBy:new Map([[env.node,new Date(env.ts)]]),ts:new Date(env.ts)
+        });
+        needsBlocks=true;
+      }
+    }
+
+    // Mempool
+    const mp = S.mp[env.node];
+    if (mp) {
+      if (k==='TxAccepted') { mp.ok++; mp.pool=env.event.pool_size||0; needsMp=true;
+        S.mpLog.unshift({ts:env.ts,node:env.node,k,tx:env.event.tx_hash,pool:mp.pool}); }
+      if (k==='TxRejected') { mp.rej++; needsMp=true;
+        S.mpLog.unshift({ts:env.ts,node:env.node,k,tx:env.event.tx_hash,reason:env.event.reason}); }
+      if (k==='TxEvicted')  { mp.ev++;  needsMp=true;
+        S.mpLog.unshift({ts:env.ts,node:env.node,k,tx:env.event.evicted}); }
+      if (k==='MempoolDrain') { mp.pool=0; needsMp=true;
+        S.mpLog.unshift({ts:env.ts,node:env.node,k,size:env.event.mempool_size}); }
+      if (S.mpLog.length>MAX_MP_LOG) S.mpLog.length=MAX_MP_LOG;
+    }
+
+    // Peers
+    function ipToNode(addr) {
+      const m=(addr||'').match(/172\.30\.0\.(\d+)/);
+      return m ? NODES[parseInt(m[1])-2] : null;
+    }
+    if (k==='PeerConnected') {
+      const p=ipToNode(env.event.addr);
+      if (p) { S.peers[env.node]?.add(p); S.peers[p]?.add(env.node); S.peersDirty=true; needsNet=true; }
+    }
+    if (k==='PeerDisconnected') {
+      const p=ipToNode(env.event.addr);
+      if (p) { S.peers[env.node]?.delete(p); S.peers[p]?.delete(env.node); S.peersDirty=true; needsNet=true; }
+    }
+    if (k==='BlockFromPeer'||k==='TxGossipAccepted') {
+      const p=ipToNode(env.event.from||'');
+      S.gossip.unshift({ts:env.ts,from:p||env.event.from,to:env.node,k,expiry:Date.now()+1500});
+      if (S.gossip.length>MAX_GOSSIP) S.gossip.length=MAX_GOSSIP;
+      needsNet=true;
+    }
+
+    // Scenarios
+    if (k==='ScenarioEvent') {
+      const {scenario,step,status,detail}=env.event;
+      if (!S.scenarios[scenario]) S.scenarios[scenario]={steps:[],status:'running'};
+      S.scenarios[scenario].steps.unshift({ts:env.ts,step,status,detail});
+      if (status==='pass'&&step==='done') S.scenarios[scenario].status='pass';
+      if (status==='fail') S.scenarios[scenario].status='fail';
+      needsSc=true;
+    }
+  }
+
+  document.getElementById('ev-count').textContent = S.totalEvents + ' événements';
+
+  // Always dirty flow (new events = new dots)
+  if (batch.length) needsFlow=true;
+
+  if (needsFlow)    markDirty('flow');
+  if (needsBlocks)  markDirty('blocks');
+  if (needsMp)      markDirty('mempool');
+  if (needsNet)     markDirty('network');
+  if (needsSc)      markDirty('scenarios');
+}
+
+// ── Heights ────────────────────────────────────────────────────────────
+function updateHeights() {
+  document.getElementById('node-hts').innerHTML =
+    NODES.map(n=>`<span class="nbadge">${n}: <b>${S.nodeHeights[n]}</b></span>`).join(' ');
+}
+
+// ── Tab 1: Canvas swimlane ─────────────────────────────────────────────
+const canvas = document.getElementById('swimlane');
+const ctx = canvas.getContext('2d');
+let canvasW=0, canvasH=0;
+// Store drawn events for click detection: [{x,y,env}]
+let drawnDots = [];
+
+function resizeCanvas() {
+  const wrap = document.getElementById('canvas-wrap');
+  canvasW = wrap.clientWidth;
+  canvasH = wrap.clientHeight;
+  canvas.width = canvasW;
+  canvas.height = canvasH;
+  drawSwimlane(true);
+}
+
+function drawSwimlane() {
+  if (!canvasW) return;
+  const now = Date.now();
+  const winMs = S.windowSecs*1000;
+  const startMs = S.follow ? now - winMs : (S.swimStart||now-winMs);
+  const pps = S.pxPerSec;
+
+  ctx.clearRect(0,0,canvasW,canvasH);
+
+  // ── Draw node bands ──────────────────────────────────────────────
+  for (let i=0; i<5; i++) {
+    const bandY = i * NODE_H;
+
+    // Node label header strip
+    ctx.fillStyle = i%2===0 ? '#161929' : '#111420';
+    ctx.fillRect(0, bandY, canvasW, NODE_LABEL_H);
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = 'bold 10px monospace';
+    ctx.fillText(NODES[i], 4, bandY + 10);
+
+    // Sub-lane rows
+    for (let j=0; j<NUM_SUBLANES; j++) {
+      const slY = bandY + NODE_LABEL_H + j*(SUBLANE_H+SUBLANE_GAP);
+      // Alternating sub-lane bg
+      ctx.fillStyle = j%2===0 ? '#0f1117' : '#0c0e16';
+      ctx.fillRect(0, slY, canvasW, SUBLANE_H);
+
+      // Sub-lane type label (left of LABEL_W)
+      ctx.fillStyle = SUBLANES[j].col;
+      ctx.font = '8px monospace';
+      ctx.fillText(SUBLANES[j].label, 2, slY + SUBLANE_H - 3);
+
+      // Vertical divider after label area
+      ctx.strokeStyle = '#1e2433';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(LABEL_W, slY);
+      ctx.lineTo(LABEL_W, slY + SUBLANE_H);
+      ctx.stroke();
+    }
+
+    // Separator between nodes
+    ctx.strokeStyle = '#2a2d3e';
+    ctx.lineWidth = 2;
+    const sepY = bandY + NODE_H - NODE_SEP/2;
+    ctx.beginPath(); ctx.moveTo(0, sepY); ctx.lineTo(canvasW, sepY); ctx.stroke();
+  }
+
+  // ── Time ticks ───────────────────────────────────────────────────
+  const tickInterval = winMs/8;
+  ctx.strokeStyle = '#1a1f30';
+  ctx.lineWidth = 1;
+  ctx.font = '8px sans-serif';
+  ctx.fillStyle = '#374151';
+  for (let t=Math.ceil(startMs/tickInterval)*tickInterval; t<startMs+winMs; t+=tickInterval) {
+    const x = LABEL_W + ((t-startMs)/1000)*pps;
+    ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,canvasH); ctx.stroke();
+    // Time label at top
+    const secs = Math.round((t - now)/1000);
+    ctx.fillText((secs===0?'now':secs+'s'), x+2, 8);
+  }
+
+  // ── Draw events ───────────────────────────────────────────────────
+  drawnDots = [];
+  const ni = Object.fromEntries(NODES.map((n,i)=>[n,i]));
+  const visible = S.events.filter(e=>{
+    const t=new Date(e.ts).getTime();
+    return t>=startMs && t<=startMs+winMs;
+  });
+  document.getElementById('flow-count').textContent = visible.length + ' visibles / ' + S.events.length + ' total';
+
+  for (const env of visible) {
+    const nodeIdx = ni[env.node];
+    if (nodeIdx===undefined) continue;
+    const sublaneIdx = getSublane(env.event.kind);
+
+    const t = new Date(env.ts).getTime();
+    const x = LABEL_W + ((t-startMs)/1000)*pps;
+    const slY = nodeIdx*NODE_H + NODE_LABEL_H + sublaneIdx*(SUBLANE_H+SUBLANE_GAP);
+    const y   = slY + SUBLANE_H/2;
+
+    // SlotTick: tiny dim tick mark (not a circle), others: colored dot
+    if (env.event.kind === 'SlotTick') {
+      ctx.strokeStyle = '#2a3548';
+      ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(x, slY+1); ctx.lineTo(x, slY+SUBLANE_H-1); ctx.stroke();
+    } else {
+      const r = 4;
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI*2);
+      ctx.fillStyle = ecolor(env.event.kind);
+      ctx.fill();
+      drawnDots.push({x, y, r, env});
+    }
+  }
+}
+
+canvas.addEventListener('click', e => {
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvasW / rect.width;
+  const scaleY = canvasH / rect.height;
+  const mx = (e.clientX-rect.left)*scaleX;
+  const my = (e.clientY-rect.top)*scaleY;
+  let best=null, bestD=Infinity;
+  for (const d of drawnDots) {
+    const dist=Math.hypot(d.x-mx, d.y-my);
+    if (dist < (d.r||4)+6 && dist<bestD) { bestD=dist; best=d; }
+  }
+  if (best) showDialog(best.env);
+});
+
+// ── Dialog ─────────────────────────────────────────────────────────────
+function showDialog(env) {
+  document.getElementById('dlg-title').textContent = env.event.kind + ' — ' + env.node;
+  const f = document.getElementById('dlg-fields');
+  f.innerHTML='';
+  const all = {ts:env.ts,node:env.node,level:env.level,seq:env.seq,...env.event};
+  delete all.kind;
+  for (const [k,v] of Object.entries(all)) {
+    const row=document.createElement('div'); row.className='dlg-row';
+    row.innerHTML=`<span class="dlg-key">${k}</span><span class="dlg-val">${v}</span>`;
+    f.appendChild(row);
+  }
+  document.getElementById('ev-dialog').showModal();
+}
+
+// ── Tab 2: Blocks ──────────────────────────────────────────────────────
+// Incremental: keep a Set of rendered heights, only add new rows
+const renderedBlocks = new Set();
+function renderBlocks() {
+  const tbody = document.getElementById('blocks-body');
+  const sorted = [...S.blocks.values()].sort((a,b)=>b.height-a.height);
+  // Add new rows at the top
+  for (const b of sorted) {
+    const existing = document.getElementById('blk-'+b.height);
+    if (existing) {
+      // Update node icons in place
+      NODES.forEach((n,i)=>{
+        const cell = existing.cells[4+i];
+        if (cell) cell.innerHTML = nodeIcon(n,b);
+      });
+      // Update spread
+      const spreadCell = existing.cells[9];
+      if (spreadCell) spreadCell.textContent = spread(b);
+    } else {
+      const tr = document.createElement('tr');
+      tr.id='blk-'+b.height;
+      tr.innerHTML=`
+        <td><strong>${b.height}</strong></td>
+        <td style="font-family:monospace;font-size:10px">${(b.hash||'').substring(0,12)}…</td>
+        <td style="font-size:10px;color:var(--muted)">${(b.proposer||'?').substring(0,10)}…</td>
+        <td>${b.txs}</td>
+        ${NODES.map(n=>`<td>${nodeIcon(n,b)}</td>`).join('')}
+        <td style="color:var(--muted);font-size:10px">${spread(b)}</td>`;
+      if (tbody.firstChild) tbody.insertBefore(tr, tbody.firstChild);
+      else tbody.appendChild(tr);
+    }
+  }
+  // Remove rows beyond MAX_BLOCKS
+  while (tbody.rows.length > MAX_BLOCKS) tbody.deleteRow(tbody.rows.length-1);
+}
+
+function nodeIcon(n,b) {
+  if (n===b.producedBy) return `<span class="ni p">P</span>`;
+  if (b.receivedBy.has(n)) return `<span class="ni y">✓</span>`;
+  return `<span class="ni n">?</span>`;
+}
+function spread(b) {
+  if (b.receivedBy.size<2) return '—';
+  const times=[...b.receivedBy.values()].map(d=>d.getTime());
+  return (Math.max(...times)-Math.min(...times))+'ms';
+}
+
+// ── Tab 3: Mempool ─────────────────────────────────────────────────────
+let mpBuilt=false;
+function renderMempool() {
+  if (!mpBuilt) {
+    document.getElementById('mp-grid').innerHTML = NODES.map(n=>`
+      <div class="mp-card">
+        <div class="mp-label">${n}</div>
+        <div class="mp-bar-wrap"><div class="mp-bar" id="mpb-${n}" style="height:2px"></div></div>
+        <div class="mp-size" id="mps-${n}">0</div>
+        <div class="mp-stats">
+          <span class="ok">+<span id="mpo-${n}">0</span></span> &nbsp;
+          <span class="bad">–<span id="mpr-${n}">0</span></span> &nbsp;
+          évict <span id="mpe-${n}">0</span>
+        </div>
+      </div>`).join('');
+    mpBuilt=true;
+  }
+  NODES.forEach(n=>{
+    const m=S.mp[n];
+    const pct=Math.min(100,(m.pool/MAX_POOL)*100);
+    const bar=document.getElementById('mpb-'+n);
+    if(bar) bar.style.height=Math.max(2,pct)+'px';
+    const sz=document.getElementById('mps-'+n); if(sz) sz.textContent=m.pool;
+    const ok=document.getElementById('mpo-'+n); if(ok) ok.textContent=m.ok;
+    const rj=document.getElementById('mpr-'+n); if(rj) rj.textContent=m.rej;
+    const ev=document.getElementById('mpe-'+n); if(ev) ev.textContent=m.ev;
+  });
+  // Events log: rebuild only the list (small, bounded at 40)
+  const ul=document.getElementById('mp-list');
+  ul.innerHTML=S.mpLog.map(e=>{
+    const col=e.k==='TxAccepted'?'var(--green)':e.k==='TxRejected'?'var(--red)':'var(--orange)';
+    const icon=e.k==='TxAccepted'?'+':e.k==='TxRejected'?'✗':'↑';
+    const tx=(e.tx||'').substring(0,10);
+    return `<li><span style="color:var(--muted);font-size:9px">${fmtTs(e.ts)}</span>
+      <span class="nbadge">${e.node}</span>
+      <span style="color:${col}">${icon} ${e.k.replace('Tx','')}</span>
+      <code style="font-size:10px;color:var(--muted)">${tx}</code>
+      ${e.pool!==undefined?`<span style="color:var(--muted)">[${e.pool}]</span>`:''}
+      ${e.reason?`<span style="color:var(--red);font-size:9px">${e.reason}</span>`:''}</li>`;
+  }).join('');
+}
+
+// ── Tab 4: Network SVG ─────────────────────────────────────────────────
+let svgInited=false;
+function renderNetwork() {
+  const svg=document.getElementById('peer-svg');
+  if (!svgInited) {
+    svgInited=true;
+    // Static elements: node circles + labels
+    NODES.forEach((n,i)=>{
+      const {x,y}=NODE_POS[n];
+      const g=mkSVG('g');
+      const c=mkSVG('circle');
+      c.setAttribute('cx',x); c.setAttribute('cy',y); c.setAttribute('r',20);
+      c.setAttribute('fill',NODE_COLORS[i]); c.setAttribute('stroke','#fff'); c.setAttribute('stroke-width','1.5');
+      g.appendChild(c);
+      const t=mkSVG('text');
+      t.setAttribute('x',x); t.setAttribute('y',y+5);
+      t.setAttribute('text-anchor','middle'); t.setAttribute('fill','#fff');
+      t.setAttribute('font-size','11'); t.setAttribute('font-weight','700');
+      t.textContent='n'+(i+1);
+      g.appendChild(t);
+      const lbl=mkSVG('text');
+      lbl.id='nlbl-'+n; lbl.setAttribute('x',x); lbl.setAttribute('y',y+34);
+      lbl.setAttribute('text-anchor','middle'); lbl.setAttribute('fill','#64748b');
+      lbl.setAttribute('font-size','10'); lbl.textContent='h=0';
+      g.appendChild(lbl);
+      svg.appendChild(g);
+    });
+    // Edge group (behind nodes)
+    const eg=mkSVG('g'); eg.id='edges';
+    svg.insertBefore(eg,svg.firstChild);
+    // Pulse group (above edges, below labels)
+    const pg=mkSVG('g'); pg.id='pulses';
+    svg.insertBefore(pg, svg.querySelector('g'));
+  }
+
+  // Update height labels
+  NODES.forEach(n=>{
+    const l=document.getElementById('nlbl-'+n);
+    if(l) l.textContent='h='+S.nodeHeights[n];
+  });
+
+  // Redraw edges only if peer state changed
+  if (S.peersDirty) {
+    S.peersDirty=false;
+    const eg=document.getElementById('edges');
+    eg.innerHTML='';
+    const drawn=new Set();
+    NODES.forEach(n=>{
+      S.peers[n].forEach(p=>{
+        const key=[n,p].sort().join('-');
+        if (drawn.has(key)) return;
+        drawn.add(key);
+        const a=NODE_POS[n], b=NODE_POS[p];
+        if(!a||!b) return;
+        const l=mkSVG('line');
+        l.setAttribute('x1',a.x); l.setAttribute('y1',a.y);
+        l.setAttribute('x2',b.x); l.setAttribute('y2',b.y);
+        l.setAttribute('stroke','#4f46e5'); l.setAttribute('stroke-width','2');
+        l.setAttribute('opacity','0.6');
+        eg.appendChild(l);
+      });
+    });
+  }
+
+  // Gossip pulses: CSS animation via <circle> with animate
+  const pg=document.getElementById('pulses');
+  pg.innerHTML='';
+  const now=Date.now();
+  S.gossip.filter(g=>g.expiry>now).forEach(g=>{
+    const a=NODE_POS[g.from], b=NODE_POS[g.to];
+    if(!a||!b) return;
+    const frac=Math.min(1,(now-(g.expiry-1500))/1500);
+    const cx=a.x+(b.x-a.x)*frac, cy=a.y+(b.y-a.y)*frac;
+    const c=mkSVG('circle');
+    c.setAttribute('cx',cx); c.setAttribute('cy',cy); c.setAttribute('r',5);
+    c.setAttribute('fill',g.k==='BlockFromPeer'?'#22c55e':'#3b82f6');
+    c.setAttribute('opacity',(1-frac).toFixed(2));
+    pg.appendChild(c);
+  });
+
+  // Animate gossip if any active
+  if (S.gossip.some(g=>g.expiry>now)) {
+    setTimeout(()=>{ markDirty('network'); }, 50);
+  }
+
+  // Peer stats
+  document.getElementById('peer-rows').innerHTML=NODES.map(n=>{
+    const conns=[...S.peers[n]];
+    return `<div class="peer-row">
+      <span>${n}</span>
+      <span class="peer-count">${conns.length} pairs</span>
+      <span style="color:var(--muted);font-size:10px">${conns.join(', ')||'—'}</span>
+    </div>`;
+  }).join('');
+
+  // Gossip log
+  document.getElementById('gossip-list').innerHTML=S.gossip.map(g=>
+    `<li>${fmtTs(g.ts)} <span style="color:${g.k==='BlockFromPeer'?'var(--green)':'var(--blue)'}">${g.k==='BlockFromPeer'?'bloc':'tx'}</span> ${g.from||'?'}→${g.to}</li>`
+  ).join('');
+}
+
+function mkSVG(tag) { return document.createElementNS('http://www.w3.org/2000/svg',tag); }
+
+// ── Tab 5: Scenarios ───────────────────────────────────────────────────
+function renderScenarios() {
+  document.querySelectorAll('.sc-btn').forEach(btn=>{
+    const sc=S.scenarios[btn.dataset.sc];
+    btn.className='sc-btn'+(sc?' '+sc.status:'');
+  });
+  const all=[];
+  Object.entries(S.scenarios).forEach(([sc,d])=>
+    d.steps.forEach(s=>all.push({sc,...s})));
+  all.sort((a,b)=>new Date(b.ts)-new Date(a.ts));
+  document.getElementById('sc-list').innerHTML=all.slice(0,80).map(s=>{
+    const cls='s-'+s.status;
+    const icon={pass:'✓',fail:'✗',start:'▶',progress:'…',running:'⟳'}[s.status]||'·';
+    return `<li><span style="color:var(--muted);font-size:9px">${fmtTs(s.ts)}</span>
+      <span class="nbadge">${s.sc}</span>
+      <span class="${cls}">${icon} [${s.step}] ${s.detail}</span></li>`;
+  }).join('');
+}
+
+// ── Utils ──────────────────────────────────────────────────────────────
+function fmtTs(iso) {
+  const d=new Date(iso);
+  return d.toLocaleTimeString('fr-FR',{hour12:false})+'.'+String(d.getMilliseconds()).padStart(3,'0');
+}
+
+// ── Controls ───────────────────────────────────────────────────────────
+document.getElementById('w-range').addEventListener('input',e=>{
+  S.windowSecs=+e.target.value;
+  document.getElementById('w-val').textContent=S.windowSecs+'s';
+  drawSwimlane(true);
+});
+document.getElementById('p-range').addEventListener('input',e=>{
+  S.pxPerSec=+e.target.value;
+  document.getElementById('p-val').textContent=S.pxPerSec;
+  drawSwimlane(true);
+});
+document.getElementById('follow-btn').addEventListener('click',()=>{
+  S.follow=!S.follow;
+  const btn=document.getElementById('follow-btn');
+  btn.textContent=S.follow?'⟶ Suivre':'⏸ Pausé';
+  btn.className=S.follow?'':'off';
+  if (!S.follow) S.swimStart=Date.now()-S.windowSecs*1000;
+  drawSwimlane(true);
+});
+
+// ── Tab switching ──────────────────────────────────────────────────────
+const DESCS = ['flow','blocks','mempool','network','scenarios'];
+document.querySelectorAll('.tab-btn').forEach(btn=>{
+  btn.addEventListener('click',()=>{
+    document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active'));
+    btn.classList.add('active');
+    activeTab=btn.dataset.tab;
+    document.getElementById('panel-'+activeTab).classList.add('active');
+    DESCS.forEach(t=>{
+      document.getElementById('desc-'+t).style.display = t===activeTab?'':'none';
+    });
+    // Force immediate render on tab change
+    if (activeTab==='flow') { resizeCanvas(); }
+    else { dirty[activeTab]=true; doRender(activeTab); }
+  });
+});
+
+// ── Scenario buttons ───────────────────────────────────────────────────
+document.querySelectorAll('.sc-btn').forEach(btn=>{
+  btn.addEventListener('click',()=>{
+    const sc=btn.dataset.sc;
+    S.scenarios[sc]={steps:[],status:'running'};
+    renderScenarios();
+    fetch('/api/scenario/'+sc,{method:'POST'}).catch(console.error);
+  });
+});
+
+// ── Resize ─────────────────────────────────────────────────────────────
+const ro=new ResizeObserver(()=>{ if(activeTab==='flow') resizeCanvas(); });
+ro.observe(document.getElementById('canvas-wrap'));
+
+// ── Init ───────────────────────────────────────────────────────────────
+connect();
+updateHeights();
+resizeCanvas();
+</script>
+</body>
+</html>

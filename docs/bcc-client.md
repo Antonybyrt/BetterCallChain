@@ -36,17 +36,17 @@ then prints the wallet address. No network call is made.
 ### `balance`
 
 ```bash
-bcc-client balance <address> [--node <url>]
+bcc-client balance <address>
 ```
 
-Calls `GET /balance/:address` on the node and prints the confirmed spendable balance.
+Calls `GET /balance/{address}` on the node and prints the confirmed spendable balance.
 
 ---
 
 ### `send`
 
 ```bash
-bcc-client send <to> <amount> [--keystore <path>] [--node <url>]
+bcc-client send <to> <amount> [--keystore <path>]
 ```
 
 Full UTXO transfer flow:
@@ -65,19 +65,61 @@ Full UTXO transfer flow:
 ### `chain tip`
 
 ```bash
-bcc-client chain tip [--node <url>]
+bcc-client chain tip
 ```
 
 Calls `GET /chain/tip` and prints the current height and block hash.
 
 ---
 
-## Global flags
+### `node init`
+
+```bash
+bcc-client node init --output <path> [--peer <addr>]... [options]
+```
+
+Generates a `bcc-node` configuration TOML file ready to use with `--config`.
+
+If `--keystore` is provided the signing key is read from the (decrypted) keystore.
+Otherwise a fresh Ed25519 keypair is generated and the **address + public key are printed** — add them to `genesis.toml` `[[validators]]` and/or `[[accounts]]` before starting the network.
+
+```bash
+# New keypair
+bcc-client node init \
+  --output config/node1.toml \
+  --peer 172.30.0.3:8333 --peer 172.30.0.4:8333 \
+  --sled-path /data/node1
+
+# From existing keystore
+bcc-client node init \
+  --output config/node1.toml \
+  --keystore ~/.bcc/keystore.json \
+  --peer 172.30.0.3:8333 --peer 172.30.0.4:8333 \
+  --sled-path /data/node1 \
+  --genesis-path /app/config/genesis.toml
+```
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--keystore <path>` | `~/.bcc/keystore.json` | Path to the encrypted keystore file |
-| `--node <url>` | `http://127.0.0.1:8080` | Node HTTP base URL |
+| `--output <path>` | — | **Required.** Path to write the config file. |
+| `--peer <addr>` | — | Bootstrap peer (`host:port`). Repeat for multiple. |
+| `--keystore <path>` | — | Use signing key from this keystore instead of generating a new one. |
+| `--listen-addr <addr>` | `0.0.0.0:8333` | P2P listen address. |
+| `--http-addr <addr>` | `0.0.0.0:8080` | HTTP API listen address. |
+| `--sled-path <path>` | `/data/node` | Sled database directory. |
+| `--genesis-path <path>` | `/app/config/genesis.toml` | Path to the genesis TOML file. |
+| `--slot-duration <secs>` | `5` | Slot duration in seconds. |
+| `--mempool-max-size <n>` | `10000` | Maximum pending transactions. |
+
+For generating all 5 test-network configs at once, see [`scripts/gen-test-configs.sh`](../scripts/gen-test-configs.sh).
+
+---
+
+## Global flags
+
+| Flag | Env var | Default | Description |
+|------|---------|---------|-------------|
+| `--rpc-url <url>` | `RPC_URL` | `http://127.0.0.1:8080` | Node HTTP base URL for all network commands. |
 
 ---
 
@@ -130,8 +172,16 @@ All outputs (including change) are finalised **before** any input is signed.
 
 Default node: `http://127.0.0.1:8080`
 
-Override with `--node <url>` on any command that contacts the node
-(`balance`, `send`, `chain tip`).
+Override with `--rpc-url <url>` (applies to all network commands) or the `RPC_URL` environment variable.
+Resolution order: `--rpc-url` flag → `$RPC_URL` → default.
+
+```bash
+# Via flag
+bcc-client --rpc-url http://172.30.0.2:8080 chain tip
+
+# Via env var
+RPC_URL=http://172.30.0.2:8080 bcc-client balance bcs1...
+```
 
 ---
 
@@ -139,6 +189,6 @@ Override with `--node <url>` on any command that contacts the node
 
 | Command | Endpoint |
 |---------|----------|
-| `balance` | `GET /balance/:address` |
-| `send` | `GET /utxos/:address`, `POST /tx` |
+| `balance` | `GET /balance/{address}` |
+| `send` | `GET /utxos/{address}`, `POST /tx` |
 | `chain tip` | `GET /chain/tip` |

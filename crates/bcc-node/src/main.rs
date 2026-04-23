@@ -5,6 +5,7 @@ use anyhow::Context;
 use clap::Parser;
 use tokio_util::sync::CancellationToken;
 use tracing::info;
+use tracing_subscriber::{fmt::time::UtcTime, EnvFilter};
 
 use bcc_core::store::{BlockStore, UtxoStore, ValidatorStore};
 use bcc_node::config::NodeConfig;
@@ -17,7 +18,7 @@ use bcc_node::{api, genesis, ibd, p2p, slot_ticker};
 #[command(name = "bcc-node", about = "BetterCallChain full node")]
 struct Cli {
     /// Path to the node configuration TOML file.
-    #[arg(short, long, default_value = "node.toml")]
+    #[arg(short, long)]
     config: String,
 }
 
@@ -31,14 +32,34 @@ async fn main() -> anyhow::Result<()> {
     );
 
     // 2. Initialise tracing.
+    //
+    // Default filter: INFO for bcc_node, WARN for everything else.
+    // Override with RUST_LOG, e.g.: RUST_LOG=bcc_node=debug,bcc_core=debug
+    let filter = EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| EnvFilter::new("bcc_node=debug,bcc_core=info,warn"));
+
     tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "bcc_node=info".into()),
-        )
+        .with_env_filter(filter)
+        // RFC 3339 timestamps with millisecond precision, e.g. 2026-04-23T09:15:00.123Z
+        .with_timer(UtcTime::rfc_3339())
+        // Include the thread name so concurrent tasks are distinguishable.
+        .with_thread_names(true)
+        // Include the source file and line number for every log entry.
+        .with_file(true)
+        .with_line_number(true)
+        // Include log LEVEL.
+        .with_level(true)
+        // Compact single-line output — easier to grep in `docker logs`.
+        .compact()
         .init();
 
-    info!(config = ?config, "BetterCallChain node starting");
+    info!(
+        node      = %config.my_address,
+        http_addr = %config.http_addr,
+        p2p_addr  = %config.listen_addr,
+        db        = %config.sled_path.display(),
+        "BetterCallChain node starting"
+    );
 
     // 3. Open persistent sled store.
     let store = Arc::new(
@@ -69,6 +90,11 @@ async fn main() -> anyhow::Result<()> {
         cancel.child_token(),
     ));
 
+    tokio::spawn(p2p::connector::run_connector(
+        state.clone(),
+        cancel.child_token(),
+    ));
+
     let ticker_handle = tokio::spawn(slot_ticker::run_slot_ticker(
         state.clone(),
         cancel.child_token(),
@@ -78,7 +104,7 @@ async fn main() -> anyhow::Result<()> {
         let http_addr  = config.http_addr;
         let api_cancel = cancel.child_token();
         let api_router = api::router(state.clone());
-        tokio::spawn(async move {
+        let resp = tokio::spawn(async move {
             let listener = tokio::net::TcpListener::bind(http_addr)
                 .await
                 .expect("failed to bind HTTP listener");
@@ -87,7 +113,8 @@ async fn main() -> anyhow::Result<()> {
                 .with_graceful_shutdown(async move { api_cancel.cancelled().await })
                 .await
                 .ok();
-        })
+        });
+        resp
     };
 
     // 9. Wait for a shutdown signal (Ctrl-C / SIGTERM).

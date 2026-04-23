@@ -8,7 +8,7 @@ Depends on: `bcc-core`
 
 ## Startup sequence (`main.rs`)
 
-1. Parse CLI (`--config <path>`, default: `node.toml`)
+1. Parse CLI (`--config <path>` — **required**, no default)
 2. Init tracing (`RUST_LOG` / default: `bcc_node=info`)
 3. Open `SledStore` at `sled_path`
 4. `apply_genesis` — idempotent, skipped if height-0 block already exists
@@ -45,9 +45,37 @@ Central `NodeState` — cheap to clone, shared across all tasks via `Arc`.
 
 Applied once at startup via `apply_genesis` (idempotent).
 
-- Builds a genesis block at height 0 with `prev_hash = [0;32]`, no transactions, and a zeroed signature.
+- Builds a genesis block at height 0 with `prev_hash = [0;32]` and a zeroed signature.
 - `merkle_root` is `sha256d(GENESIS_MESSAGE)` — permanently encodes the chain's identity into the Merkle root.
+- Each `[[accounts]]` entry becomes a coinbase-style transaction (no inputs, one output) embedded in the genesis block; the UTXO set is populated via `utxo.apply_block`.
 - Seeds the `ValidatorStore` with the initial validator set from `genesis.toml`.
+
+#### `genesis.toml` format
+
+```toml
+# Unix timestamp — changing it produces a different genesis hash and chain identity.
+timestamp = 1775029012
+
+# Validator set: registers staking nodes in the consensus engine.
+[[validators]]
+address = "bcs1b523d93ee39930528b034952aa1b5b52710f11f8"  # must match my_address in node config
+pubkey  = "6a9ca12cd7203309c3a92b3a7b94536db8a38e1ceca7fde354f30e26f19d7d79"  # 32-byte Ed25519 public key (hex)
+stake   = 1000000000000
+
+# Initial token allocations (optional): mints tokens into the UTXO set at genesis.
+[[accounts]]
+address = "bcs1b523d93ee39930528b034952aa1b5b52710f11f8"
+balance = 5000000000000
+```
+
+| Section | Field | Description |
+|---------|-------|-------------|
+| (root) | `timestamp` | Unix timestamp of the genesis block. |
+| `[[validators]]` | `address` | `bcs1...` address — must match `my_address` in the node config. |
+| `[[validators]]` | `pubkey` | Hex-encoded 32-byte Ed25519 public key. Printed by `bcc-client node init`. |
+| `[[validators]]` | `stake` | Initial stake in base units. Determines block proposal probability. |
+| `[[accounts]]` | `address` | `bcs1...` address to credit at genesis. |
+| `[[accounts]]` | `balance` | Tokens minted into the UTXO set. `[[accounts]]` is optional. |
 
 ### IBD — Initial Block Download (`ibd.rs`)
 
@@ -125,8 +153,8 @@ Plain TCP with `LengthDelimitedCodec` (4-byte BE length + JSON, max 16 MiB per f
 | Endpoint | Response |
 |----------|----------|
 | `GET /chain/tip` | `{ height, hash }` |
-| `GET /balance/:address` | `{ address, balance }` |
-| `GET /utxos/:address` | `[{ tx_hash, index, amount }, …]` |
+| `GET /balance/{address}` | `{ address, balance }` |
+| `GET /utxos/{address}` | `[{ tx_hash, index, amount }, …]` |
 | `POST /tx` | `{ tx_hash }` |
 | `GET /peers` | `["ip:port", ...]` |
 

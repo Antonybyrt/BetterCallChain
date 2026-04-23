@@ -4,6 +4,7 @@ use bcc_core::{
     types::{
         address::Address,
         block::{Block, BlockHeader},
+        transaction::{Transaction, TxKind, TxOutput},
         validator::Validator,
     },
 };
@@ -24,6 +25,9 @@ pub struct GenesisConfig {
     pub timestamp: i64,
     /// Initial set of validators: each entry is (address, hex pubkey, stake).
     pub validators: Vec<GenesisValidator>,
+    /// Initial token allocations: each entry mints tokens into the UTXO set at genesis.
+    #[serde(default)]
+    pub accounts: Vec<GenesisAccount>,
 }
 
 /// One entry in the genesis validator set.
@@ -35,6 +39,16 @@ pub struct GenesisValidator {
     pub pubkey: String,
     /// Initial stake amount.
     pub stake: u64,
+}
+
+/// One entry in the genesis token allocation.
+/// Creates a single UTXO owned by `address` with the given `balance`.
+#[derive(Debug, Deserialize)]
+pub struct GenesisAccount {
+    /// `bcs1...` recipient address.
+    pub address: String,
+    /// Amount of tokens to credit at genesis.
+    pub balance: u64,
 }
 
 impl GenesisConfig {
@@ -53,7 +67,7 @@ impl GenesisConfig {
 pub fn apply_genesis(
     config: &GenesisConfig,
     blocks: &dyn BlockStore,
-    _utxo: &dyn UtxoStore,
+    utxo: &dyn UtxoStore,
     validators: &dyn ValidatorStore,
 ) -> Result<(), NodeError> {
     // Idempotency check.
@@ -67,8 +81,24 @@ pub fn apply_genesis(
 
     tracing::info!(message = GENESIS_MESSAGE, "applying genesis block");
 
-    let genesis = build_genesis_block(config.timestamp);
+    // Build coinbase transactions for initial account balances.
+    let alloc_txs = config
+        .accounts
+        .iter()
+        .map(|entry| {
+            let address = Address::validate(&entry.address)
+                .map_err(|e| NodeError::Config(format!("genesis account address: {e}")))?;
+            Ok(Transaction {
+                kind:    TxKind::Transfer,
+                inputs:  vec![],
+                outputs: vec![TxOutput { amount: entry.balance, address }],
+            })
+        })
+        .collect::<Result<Vec<_>, NodeError>>()?;
+
+    let genesis = build_genesis_block(config.timestamp, alloc_txs);
     blocks.insert(&genesis).map_err(NodeError::Store)?;
+    utxo.apply_block(&genesis).map_err(NodeError::Store)?;
 
     for entry in &config.validators {
         let address = Address::validate(&entry.address)
@@ -87,7 +117,12 @@ pub fn apply_genesis(
             .map_err(NodeError::Store)?;
     }
 
-    tracing::info!(hash = %hex::encode(genesis.hash()), "genesis block applied");
+    tracing::info!(
+        hash = %hex::encode(genesis.hash()),
+        accounts = config.accounts.len(),
+        validators = config.validators.len(),
+        "genesis block applied"
+    );
     Ok(())
 }
 
@@ -96,7 +131,8 @@ pub fn apply_genesis(
 /// `prev_hash` is all-zeros. The `merkle_root` is derived from the [`GENESIS_MESSAGE`],
 /// permanently encoding it into the chain's identity — like Bitcoin's newspaper headline.
 /// The proposer signature is zeroed (genesis has no elected proposer).
-fn build_genesis_block(timestamp: i64) -> Block {
+/// `alloc_txs` are coinbase-style transactions (no inputs) that mint the initial balances.
+fn build_genesis_block(timestamp: i64, alloc_txs: Vec<Transaction>) -> Block {
     Block {
         header: BlockHeader {
             prev_hash:   [0u8; 32],
@@ -107,7 +143,7 @@ fn build_genesis_block(timestamp: i64) -> Block {
             proposer:    Address::from_pubkey_bytes(&[0u8; 32]),
         },
         signature: Signature::from_bytes(&[0u8; 64]),
-        txs: vec![],
+        txs: alloc_txs,
     }
 }
 

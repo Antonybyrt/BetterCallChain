@@ -6,6 +6,7 @@ use axum::{
     Json, Router,
 };
 use serde::Serialize;
+use tracing::{info, warn};
 
 use bcc_core::types::{address::Address, transaction::Transaction};
 
@@ -15,8 +16,8 @@ use crate::{error::NodeError, state::NodeState};
 pub fn router(state: NodeState) -> Router {
     Router::new()
         .route("/chain/tip",         get(get_tip))
-        .route("/balance/:address",  get(get_balance))
-        .route("/utxos/:address",    get(get_utxos))
+        .route("/balance/{address}",  get(get_balance))
+        .route("/utxos/{address}",    get(get_utxos))
         .route("/tx",                post(post_tx))
         .route("/peers",             get(get_peers))
         .with_state(state)
@@ -74,8 +75,15 @@ impl From<NodeError> for AppError {
 /// `GET /chain/tip` — returns the current chain tip height and hash.
 async fn get_tip(State(state): State<NodeState>) -> Result<Json<TipResponse>, AppError> {
     match state.blocks.tip().map_err(NodeError::Store)? {
-        Some((height, hash)) => Ok(Json(TipResponse { height, hash: hex::encode(hash) })),
-        None => Err(AppError(NodeError::Validation("chain is empty".into()))),
+        Some((height, hash)) => {
+            let hash_hex = hex::encode(hash);
+            info!(height, hash = %hash_hex, "api: GET /chain/tip");
+            Ok(Json(TipResponse { height, hash: hash_hex }))
+        }
+        None => {
+            warn!("api: GET /chain/tip — chain is empty");
+            Err(AppError(NodeError::Validation("chain is empty".into())))
+        }
     }
 }
 
@@ -87,6 +95,7 @@ async fn get_balance(
     let addr = Address::validate(&address)
         .map_err(|e| NodeError::Validation(e.to_string()))?;
     let balance = state.utxo.balance(&addr).map_err(NodeError::Store)?;
+    info!(address = %address, balance, "api: GET /balance");
     Ok(Json(BalanceResponse { address, balance }))
 }
 
@@ -100,6 +109,7 @@ async fn get_utxos(
     let addr  = Address::validate(&address)
         .map_err(|e| NodeError::Validation(e.to_string()))?;
     let utxos = state.utxo.list_utxos(&addr).map_err(NodeError::Store)?;
+    info!(address = %address, count = utxos.len(), "api: GET /utxos");
     Ok(Json(utxos
         .into_iter()
         .map(|(out_ref, output)| UtxoItem {
@@ -118,8 +128,17 @@ async fn post_tx(
     Json(tx):     Json<Transaction>,
 ) -> Result<Json<TxResponse>, AppError> {
     let tx_hash = tx.hash();
-    state.mempool.lock().await.add(tx, &*state.utxo)?;
-    Ok(Json(TxResponse { tx_hash: hex::encode(tx_hash) }))
+    let tx_hash_hex = hex::encode(tx_hash);
+    match state.mempool.lock().await.add(tx, &*state.utxo) {
+        Ok(()) => {
+            info!(tx_hash = %tx_hash_hex, "api: POST /tx accepted");
+            Ok(Json(TxResponse { tx_hash: tx_hash_hex }))
+        }
+        Err(e) => {
+            warn!(tx_hash = %tx_hash_hex, reason = %e, "api: POST /tx rejected");
+            Err(AppError(e))
+        }
+    }
 }
 
 /// `GET /peers` — returns the list of currently connected peer addresses.

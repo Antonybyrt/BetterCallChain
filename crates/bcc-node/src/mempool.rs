@@ -6,6 +6,7 @@ use bcc_core::{
     validation::transaction::validate_transaction,
 };
 use indexmap::IndexMap;
+use tracing::{debug, info, warn};
 
 use crate::error::NodeError;
 
@@ -46,19 +47,31 @@ impl Mempool {
     /// or the pool is full and the new tx has lower or equal value than the minimum pooled tx.
     pub fn add(&mut self, tx: Transaction, utxo: &dyn UtxoStore) -> Result<(), NodeError> {
         let tx_hash = tx.hash();
+        let tx_hash_hex = hex::encode(tx_hash);
 
-        // Already in pool.
+        // Already in pool — idempotent, not an error.
         if self.txs.contains_key(&tx_hash) {
+            debug!(tx_hash = %tx_hash_hex, "mempool: tx already present, ignoring duplicate");
             return Ok(());
         }
 
         // Validate against UTXO set.
         validate_transaction(&tx, utxo)
-            .map_err(|e| NodeError::Validation(e.to_string()))?;
+            .map_err(|e| {
+                warn!(tx_hash = %tx_hash_hex, reason = %e, "mempool: tx rejected — validation failed");
+                NodeError::Validation(e.to_string())
+            })?;
 
-        // Double-spend guard: reject if any input is already claimed by another pooled tx.
+        // Double-spend guard.
         for input in &tx.inputs {
             if self.in_flight.contains(&input.out_ref) {
+                let conflict = hex::encode(input.out_ref.tx_hash);
+                warn!(
+                    tx_hash   = %tx_hash_hex,
+                    conflict  = %conflict,
+                    index     = input.out_ref.index,
+                    "mempool: tx rejected — double spend (input already in-flight)"
+                );
                 return Err(NodeError::Validation(
                     "double spend: input already in mempool".into(),
                 ));
@@ -77,9 +90,21 @@ impl Mempool {
                 .ok_or_else(|| NodeError::Validation("mempool at capacity".into()))?;
 
             if new_value <= min_value {
+                warn!(
+                    tx_hash   = %tx_hash_hex,
+                    pool_size = self.txs.len(),
+                    tx_value  = new_value,
+                    min_value,
+                    "mempool: tx rejected — pool full and tx value too low"
+                );
                 return Err(NodeError::Validation("mempool at capacity".into()));
             }
 
+            warn!(
+                evicted   = %hex::encode(min_hash),
+                new_tx    = %tx_hash_hex,
+                "mempool: evicting low-value tx to make room"
+            );
             self.remove_one(&min_hash);
         }
 
@@ -90,6 +115,12 @@ impl Mempool {
         self.values.insert(tx_hash, new_value);
         self.txs.insert(tx_hash, tx);
 
+        info!(
+            tx_hash   = %tx_hash_hex,
+            value     = new_value,
+            pool_size = self.txs.len(),
+            "mempool: tx accepted"
+        );
         Ok(())
     }
 
@@ -99,6 +130,8 @@ impl Mempool {
             self.remove_one(hash);
         }
     }
+
+    pub fn len(&self) -> usize { self.txs.len() }
 
     /// Returns up to `max` transactions sorted by descending total output value (fee priority).
     /// The returned transactions are NOT removed from the pool — call [`remove`] after inclusion.

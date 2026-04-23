@@ -33,12 +33,12 @@ pub async fn run_peer(
     state:  NodeState,
     cancel: CancellationToken,
 ) {
-    info!(%addr, "peer connected");
-
     let mut framed = Framed::new(stream, make_codec());
     let (tx, mut rx) = mpsc::channel::<Message>(OUTBOUND_QUEUE);
 
     state.peers.write().await.insert(addr, tx.clone());
+    let peer_count = state.peers.read().await.len();
+    info!(%addr, peer_count, "peer connected");
     let mut block_sub = state.new_block.subscribe();
 
     loop {
@@ -75,7 +75,6 @@ pub async fn run_peer(
             result = framed.next() => {
                 match result {
                     None => {
-                        info!(%addr, "peer disconnected");
                         break;
                     }
                     Some(Err(e)) => {
@@ -93,7 +92,8 @@ pub async fn run_peer(
     }
 
     state.peers.write().await.remove(&addr);
-    info!(%addr, "peer task done");
+    let peer_count = state.peers.read().await.len();
+    info!(%addr, peer_count, "peer disconnected");
 }
 
 /// Serialises `msg` as JSON and writes it as a length-delimited frame.
@@ -121,6 +121,11 @@ async fn dispatch(
 
     match msg {
         Message::NewBlock { block } => {
+            let block_hash   = hex::encode(block.hash());
+            let block_height = block.header.height;
+            let tx_count     = block.txs.len();
+            let proposer     = block.header.proposer.to_string();
+
             let tip_height = state
                 .blocks
                 .tip()
@@ -141,16 +146,50 @@ async fn dispatch(
                     .read()
                     .await
                     .broadcast_except(&source, Message::NewBlock { block });
+
+                info!(
+                    from     = %source,
+                    height   = block_height,
+                    hash     = %block_hash,
+                    txs      = tx_count,
+                    proposer = %proposer,
+                    "p2p: block accepted from peer"
+                );
+            } else {
+                debug!(
+                    from         = %source,
+                    block_height = block_height,
+                    local_tip    = tip_height,
+                    hash         = %block_hash,
+                    "p2p: block ignored (height mismatch)"
+                );
             }
         }
 
         Message::NewTx { tx } => {
-            let _ = state.mempool.lock().await.add(tx.clone(), &*state.utxo);
-            state
-                .peers
-                .read()
-                .await
-                .broadcast_except(&source, Message::NewTx { tx });
+            let tx_hash = hex::encode(tx.hash());
+            match state.mempool.lock().await.add(tx.clone(), &*state.utxo) {
+                Ok(()) => {
+                    debug!(
+                        from    = %source,
+                        tx_hash = %tx_hash,
+                        "p2p: tx gossip accepted, re-broadcasting"
+                    );
+                    state
+                        .peers
+                        .read()
+                        .await
+                        .broadcast_except(&source, Message::NewTx { tx });
+                }
+                Err(e) => {
+                    debug!(
+                        from    = %source,
+                        tx_hash = %tx_hash,
+                        reason  = %e,
+                        "p2p: tx gossip rejected"
+                    );
+                }
+            }
         }
 
         Message::GetBlocks { from_height } => {

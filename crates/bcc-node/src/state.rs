@@ -79,6 +79,8 @@ impl PeerSet {
         self.peers.remove(addr);
     }
 
+    pub fn len(&self) -> usize { self.peers.len() }
+
     /// Returns all currently connected peer addresses.
     pub fn addrs(&self) -> Vec<SocketAddr> {
         self.peers.keys().copied().collect()
