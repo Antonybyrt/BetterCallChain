@@ -1,13 +1,14 @@
-FROM rust:1.85 AS builder
+FROM rust:1.88 AS builder
 
 WORKDIR /usr/src/app
 
 # Copy the entire workspace
 COPY Cargo.toml Cargo.lock ./
 COPY crates/ ./crates/
+COPY tools/ ./tools/
 
-# Build both node and client
-RUN cargo build --release --workspace
+# Build node and client (visualizer is a local-only tool)
+RUN cargo build --release -p bcc-node -p bcc-client
 
 # Runtime image for both node and client interactions
 FROM debian:bookworm-slim
