@@ -22,6 +22,7 @@ docker compose up --build
 | `bcc-core` | Pure logic library — types, crypto, consensus, validation, store traits | [docs/bcc-core.md](docs/bcc-core.md) |
 | `bcc-node` | Full node binary — P2P, slot ticker, HTTP API, sled persistence | [docs/bcc-node.md](docs/bcc-node.md) |
 | `bcc-client` | CLI wallet — key management, transaction building, node interaction | [docs/bcc-client.md](docs/bcc-client.md) |
+| `bcc-visualizer` | Web UI for real-time event flow, block propagation, mempool and test scenarios | [docs/bcc-visualizer.md](docs/bcc-visualizer.md) |
 
 ## Address Format
 
