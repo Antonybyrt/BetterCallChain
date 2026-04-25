@@ -101,7 +101,7 @@ async fn main() -> anyhow::Result<()> {
         a.set_port(config.http_addr.port() + 1000);
         a
     };
-    tokio::spawn(debug_ws::run_debug_ws(debug_addr, debug_tx, cancel.child_token()));
+    tokio::spawn(debug_ws::run_debug_ws(debug_addr, state.clone(), debug_tx, cancel.child_token()));
 
     let p2p_handle = tokio::spawn(p2p::server::run_server(
         state.clone(),
@@ -118,24 +118,7 @@ async fn main() -> anyhow::Result<()> {
         cancel.child_token(),
     ));
 
-    let api_handle = {
-        let http_addr  = config.http_addr;
-        let api_cancel = cancel.child_token();
-        let api_router = api::router(state.clone());
-        let api_state  = state.clone();
-        let resp = tokio::spawn(async move {
-            let listener = tokio::net::TcpListener::bind(http_addr)
-                .await
-                .expect("failed to bind HTTP listener");
-            info!(%http_addr, "HTTP API listening");
-            api_state.emit(DebugEvent::HttpApiReady { http_addr: http_addr.to_string() });
-            axum::serve(listener, api_router)
-                .with_graceful_shutdown(async move { api_cancel.cancelled().await })
-                .await
-                .ok();
-        });
-        resp
-    };
+    let api_handle = tokio::spawn(api::run_api(state.clone(), cancel.child_token()));
 
     // 9. Wait for a shutdown signal (Ctrl-C / SIGTERM).
     #[cfg(unix)]

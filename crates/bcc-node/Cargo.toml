@@ -13,7 +13,7 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow = "1.0.102"
-axum = { version = "0.8.8", features = ["ws"] }
+tokio-tungstenite = { version = "0.26", features = ["rustls-tls-webpki-roots"] }
 bcc-core = { path = "../bcc-core" }
 bincode = "1"
 bytes = "1.11.1"

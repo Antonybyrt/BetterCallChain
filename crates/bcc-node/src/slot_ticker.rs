@@ -99,6 +99,21 @@ pub async fn run_slot_ticker(state: NodeState, cancel: CancellationToken) {
         debug!(slot, "slot tick");
         state.emit(DebugEvent::SlotTick { slot: slot as u64, tip_height });
 
+        // Guard: if the current tip already belongs to this slot, a peer has already
+        // proposed a valid block.  Proposing again would create a competing fork.
+        let tip_already_this_slot = state.blocks
+            .get_by_height(tip_height)
+            .ok()
+            .flatten()
+            .map(|b| b.header.slot >= slot as u64)
+            .unwrap_or(false);
+
+        if tip_already_this_slot {
+            debug!(slot, tip_height, "slot already covered by existing block — skipping");
+            if !sleep_until_secs(slot_end, &cancel).await { return; }
+            continue;
+        }
+
         if let Some(proposer) = elect_proposer(slot as u64, &tip_hash, &validators) {
             if proposer.address == state.config.my_address
                 && time_remaining > MIN_PROPOSE_WINDOW_SECS

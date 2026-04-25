@@ -78,6 +78,14 @@ pub enum DebugEvent {
 
     // ── Visualizer scenarios (published by bcc-visualizer, not the node) ─────
     ScenarioEvent { scenario: String, step: String, status: String, detail: String },
+
+    // ── Snapshot (sent to a new WS client to seed its initial state) ─────────
+    NodeSnapshot {
+        tip_height:   u64,
+        tip_hash:     String,
+        peers:        Vec<String>,
+        mempool_size: usize,
+    },
 }
 
 /// Timestamped wrapper around [`DebugEvent`].

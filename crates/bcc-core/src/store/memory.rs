@@ -14,6 +14,9 @@ pub struct MemoryStore {
     blocks:     RwLock<BTreeMap<u64, Block>>,
     index:      RwLock<HashMap<BlockHash, u64>>,
     utxo:       RwLock<HashMap<TxOutRef, TxOutput>>,
+    /// Spent outputs captured during apply_block, keyed by block height.
+    /// Required to restore UTXOs on rollback.
+    spent:      RwLock<HashMap<u64, Vec<(TxOutRef, TxOutput)>>>,
     validators: RwLock<HashMap<Address, Validator>>,
 }
 
@@ -24,6 +27,7 @@ impl MemoryStore {
             blocks:     RwLock::new(BTreeMap::new()),
             index:      RwLock::new(HashMap::new()),
             utxo:       RwLock::new(HashMap::new()),
+            spent:      RwLock::new(HashMap::new()),
             validators: RwLock::new(HashMap::new()),
         }
     }
@@ -81,13 +85,17 @@ impl UtxoStore for MemoryStore {
     }
 
     /// Removes inputs spent by the block and inserts newly created outputs.
-    /// Holds a single write-lock for the full operation to ensure atomicity.
+    /// Captures spent outputs so rollback_block can restore them.
     fn apply_block(&self, block: &Block) -> StoreResult<()> {
-        let mut utxo = self.utxo.write().unwrap();
+        let mut utxo  = self.utxo.write().unwrap();
+        let mut spent = self.spent.write().unwrap();
+        let mut block_spent: Vec<(TxOutRef, TxOutput)> = Vec::new();
         for tx in &block.txs {
             let tx_hash = tx.hash();
             for input in &tx.inputs {
-                utxo.remove(&input.out_ref);
+                if let Some(prev_out) = utxo.remove(&input.out_ref) {
+                    block_spent.push((input.out_ref.clone(), prev_out));
+                }
             }
             for (index, output) in tx.outputs.iter().enumerate() {
                 utxo.insert(
@@ -96,21 +104,24 @@ impl UtxoStore for MemoryStore {
                 );
             }
         }
+        spent.insert(block.header.height, block_spent);
         Ok(())
     }
 
     /// Re-inserts inputs removed by the block and deletes outputs it created.
-    /// Requires the full block to reconstruct the previous state.
     fn rollback_block(&self, block: &Block) -> StoreResult<()> {
-        let mut utxo = self.utxo.write().unwrap();
+        let mut utxo  = self.utxo.write().unwrap();
+        let mut spent = self.spent.write().unwrap();
         for tx in block.txs.iter().rev() {
             let tx_hash = tx.hash();
             for index in 0..tx.outputs.len() {
                 utxo.remove(&TxOutRef { tx_hash, index: index as u32 });
             }
-            // Re-inserting spent inputs requires their original TxOutput values.
-            // In a full node these would be fetched from the block history.
-            // For now, inputs are left unrestored — implement fully with block history access.
+        }
+        if let Some(restored) = spent.remove(&block.header.height) {
+            for (out_ref, output) in restored {
+                utxo.insert(out_ref, output);
+            }
         }
         Ok(())
     }

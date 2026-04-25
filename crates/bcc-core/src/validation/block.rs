@@ -30,6 +30,9 @@ pub enum BlockValidationError {
     #[error("transaction validation failed: {0}")]
     InvalidTransaction(String),
 
+    #[error("merkle root mismatch")]
+    BadMerkleRoot,
+
     #[error("storage error: {0}")]
     Store(#[from] StoreError),
 }
@@ -75,7 +78,13 @@ pub fn validate_block(
     verify(&elected.pubkey, &header_bytes, &block.signature)
         .map_err(|_| BlockValidationError::BadSignature)?;
 
-    // 6. Every transaction must be valid against the current UTXO set.
+    // 6. Merkle root must match the transactions actually in this block.
+    let computed = Block::compute_merkle_root(&block.txs);
+    if block.header.merkle_root != computed {
+        return Err(BlockValidationError::BadMerkleRoot);
+    }
+
+    // 7. Every transaction must be valid against the current UTXO set.
     for tx in &block.txs {
         validate_transaction(tx, utxo)
             .map_err(|e| BlockValidationError::InvalidTransaction(e.to_string()))?;

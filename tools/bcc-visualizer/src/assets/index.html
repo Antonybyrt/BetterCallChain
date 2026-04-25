@@ -509,6 +509,18 @@ function processBatch(){
       const p=ip2node(env.event.addr);
       if(p){S.peers[env.node]?.delete(p);S.peers[p]?.delete(env.node);S.peersDirty=true;nNet=true;}
     }
+    if(k==='NodeSnapshot'){
+      const h=env.event.tip_height||0;
+      if(h>(S.nodeHeights[env.node]||0)){S.nodeHeights[env.node]=h;updateHeights();}
+      S.peers[env.node]=new Set();
+      for(const addr of (env.event.peers||[])){
+        const p=ip2node(addr);
+        if(p){S.peers[env.node].add(p);S.peers[p]?.add(env.node);}
+      }
+      S.peersDirty=true;nNet=true;
+      const mp=S.mp[env.node];
+      if(mp){mp.pool=env.event.mempool_size||0;nChain=true;}
+    }
     if(k==='BlockFromPeer'||k==='TxGossipAccepted'){
       const p=ip2node(env.event.from||'');
       S.gossip.unshift({ts:env.ts,from:p||env.event.from,to:env.node,k,expiry:Date.now()+1500});

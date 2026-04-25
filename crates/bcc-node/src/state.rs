@@ -52,6 +52,22 @@ impl NodeState {
     pub fn emit(&self, event: DebugEvent) {
         let _ = self.debug_tx.send(DebugEnvelope::now(event));
     }
+
+    /// Atomically replaces `old_block` with `new_block` at the same height.
+    ///
+    /// Order: rollback old UTXOs → insert new block → apply new UTXOs.
+    /// If `apply_block` fails after `rollback_block` the store implementations
+    /// (sled: crash sentinel; memory: in-memory only) must handle recovery.
+    pub fn reorg_block(
+        &self,
+        old_block: &Block,
+        new_block: &Block,
+    ) -> Result<(), bcc_core::store::StoreError> {
+        self.utxo.rollback_block(old_block)?;
+        self.blocks.insert(new_block)?;
+        self.utxo.apply_block(new_block)?;
+        Ok(())
+    }
 }
 
 impl NodeState {
@@ -99,6 +115,12 @@ impl PeerSet {
     /// Returns all currently connected peer addresses.
     pub fn addrs(&self) -> Vec<SocketAddr> {
         self.peers.keys().copied().collect()
+    }
+
+    /// Returns `true` if any connected peer shares the same IP address.
+    /// Used to reject duplicate bidirectional connections.
+    pub fn has_ip(&self, ip: std::net::IpAddr) -> bool {
+        self.peers.keys().any(|a| a.ip() == ip)
     }
 
     /// Sends `msg` to every connected peer except `source`.

@@ -37,8 +37,18 @@ pub async fn run_peer(
     let mut framed = Framed::new(stream, make_codec());
     let (tx, mut rx) = mpsc::channel::<Message>(OUTBOUND_QUEUE);
 
-    state.peers.write().await.insert(addr, tx.clone());
-    let peer_count = state.peers.read().await.len();
+    // Reject duplicate connections: both sides of a pair can dial each other
+    // simultaneously, producing two TCP connections for the same logical link.
+    // Keep only the first; close the second immediately.
+    let peer_count = {
+        let mut peers = state.peers.write().await;
+        if peers.has_ip(addr.ip()) {
+            debug!(%addr, "p2p: duplicate connection from same IP — closing");
+            return;
+        }
+        peers.insert(addr, tx.clone());
+        peers.len()
+    };
     info!(%addr, peer_count, "peer connected");
     state.emit(DebugEvent::PeerConnected { addr: addr.to_string(), peer_count });
     let mut block_sub = state.new_block.subscribe();
@@ -93,8 +103,11 @@ pub async fn run_peer(
         }
     }
 
-    state.peers.write().await.remove(&addr);
-    let peer_count = state.peers.read().await.len();
+    let peer_count = {
+        let mut peers = state.peers.write().await;
+        peers.remove(&addr);
+        peers.len()
+    };
     info!(%addr, peer_count, "peer disconnected");
     state.emit(DebugEvent::PeerDisconnected { addr: addr.to_string(), peer_count });
 }
@@ -129,6 +142,14 @@ async fn dispatch(
             let block_height  = block.header.height;
             let tx_count      = block.txs.len();
             let proposer      = block.header.proposer.to_string();
+
+            // Dedup: concurrent peer tasks can deliver the same block simultaneously.
+            // If this block is already in the store, there is nothing more to do.
+            if state.blocks.get_by_hash(&incoming_hash).map_err(|e| e.to_string())?.is_some() {
+                debug!(from = %source, height = block_height, hash = %block_hash,
+                       "p2p: block already processed — skipping duplicate");
+                return Ok(());
+            }
 
             let (tip_height, tip_hash) = match state.blocks.tip().map_err(|e| e.to_string())? {
                 Some(t) => t,
@@ -235,7 +256,7 @@ async fn dispatch(
                     return Ok(());
                 }
 
-                // Roll back the current tip (restores UTXOs + removes block from chain).
+                // Swap tip atomically: rollback old UTXOs, then insert + apply new block.
                 let current_tip = state.blocks
                     .get_by_height(tip_height)
                     .map_err(|e| e.to_string())?
@@ -243,11 +264,7 @@ async fn dispatch(
 
                 let evicted_hash = hex::encode(current_tip.hash());
 
-                state.utxo.rollback_block(&current_tip).map_err(|e| e.to_string())?;
-
-                // Apply the winning block.
-                state.blocks.insert(&block).map_err(|e| e.to_string())?;
-                state.utxo.apply_block(&block).map_err(|e| e.to_string())?;
+                state.reorg_block(&current_tip, &block).map_err(|e| e.to_string())?;
 
                 let hashes: Vec<_> = block.txs.iter().map(|tx| tx.hash()).collect();
                 state.mempool.lock().await.remove(&hashes);
@@ -268,13 +285,14 @@ async fn dispatch(
 
             } else if block.header.height > tip_height + 1 {
                 // ── We are behind by more than one block ─────────────────────
-                // The peer has a longer chain.  Log so the operator can see the
-                // gap; the P2P connector and IBD will resync the node.
+                // Request the missing range from the peer that told us about
+                // this block so we can catch up without waiting for a restart.
                 debug!(
                     from = %source, block_height, local_tip = tip_height,
                     gap = block_height - tip_height - 1,
-                    "p2p: block ahead of tip — node may need resync"
+                    "p2p: block ahead of tip — requesting missing blocks"
                 );
+                let _ = reply_tx.try_send(Message::GetBlocks { from_height: tip_height + 1 });
             } else {
                 // block_height < tip_height: stale block from a shorter chain
                 debug!(
