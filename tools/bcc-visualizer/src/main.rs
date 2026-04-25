@@ -45,7 +45,7 @@ async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
     // Build (node_name, debug_ws_url) pairs from either --debug-urls or --node-ports
-    let node_urls: Vec<(String, String)> = if let Some(raw) = cli.debug_urls {
+    let node_urls: Vec<(String, String)> = if let Some(ref raw) = cli.debug_urls {
         raw.split(',')
             .enumerate()
             .map(|(i, url)| (format!("node{}", i + 1), url.trim().to_string()))
@@ -60,11 +60,28 @@ async fn main() -> anyhow::Result<()> {
             .collect()
     };
 
-    // HTTP ports for scenario execution (extract from node_ports, or derive from debug URLs)
-    let scenario_ports: Vec<u16> = cli.node_ports
-        .split(',')
-        .filter_map(|s| s.trim().parse().ok())
-        .collect();
+    // HTTP base URLs for scenario execution.
+    // When running inside Docker, --debug-urls carries the correct internal IPs
+    // (ws://172.30.0.2:9080/debug → http://172.30.0.2:8080).
+    // Fall back to localhost + --node-ports when no debug URLs are configured.
+    let scenario_urls: Vec<String> = if let Some(ref raw) = cli.debug_urls {
+        raw.split(',')
+            .filter_map(|url| {
+                // ws://HOST:PORT/debug  →  http://HOST:(PORT-1000)
+                let u = url.trim().strip_prefix("ws://")?;
+                let u = u.strip_suffix("/debug").unwrap_or(u);
+                let (host, port_str) = u.rsplit_once(':')?;
+                let http_port = port_str.parse::<u16>().ok()?.saturating_sub(1000);
+                Some(format!("http://{}:{}", host, http_port))
+            })
+            .collect()
+    } else {
+        cli.node_ports
+            .split(',')
+            .filter_map(|s| s.trim().parse::<u16>().ok())
+            .map(|p| format!("http://127.0.0.1:{}", p))
+            .collect()
+    };
 
     let cancel = CancellationToken::new();
     let bus    = Arc::new(EventBus::new(1000));
@@ -74,7 +91,7 @@ async fn main() -> anyhow::Result<()> {
             .spawn(cancel.child_token());
     }
 
-    server::run_server(cli.bind, Arc::clone(&bus), scenario_ports, cancel.child_token()).await;
+    server::run_server(cli.bind, Arc::clone(&bus), scenario_urls, cancel.child_token()).await;
 
     Ok(())
 }

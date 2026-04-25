@@ -8,6 +8,7 @@ use bcc_core::types::{address::Address, transaction::Transaction};
 use crate::{
     debug_event::DebugEvent,
     error::NodeError,
+    p2p::protocol::Message,
     state::NodeState,
 };
 
@@ -151,6 +152,8 @@ async fn post_tx(state: &NodeState, body: &[u8]) -> Vec<u8> {
     };
     let tx_hash     = tx.hash();
     let tx_hash_hex = hex::encode(tx_hash);
+    // Keep a copy for gossip — mempool.add() consumes the original.
+    let tx_for_gossip = tx.clone();
 
     match state.mempool.lock().await.add(tx, &*state.utxo) {
         Ok(added) => {
@@ -164,6 +167,12 @@ async fn post_tx(state: &NodeState, body: &[u8]) -> Vec<u8> {
                 pool_size: added.pool_size,
             });
             state.emit(DebugEvent::ApiTxAccepted { tx_hash: tx_hash_hex.clone() });
+            // Propagate to all P2P peers only if this is a new transaction.
+            // Duplicates must not be re-broadcast to avoid gossip storms.
+            if added.newly_added {
+                state.peers.read().await
+                    .broadcast_all(Message::NewTx { tx: tx_for_gossip });
+            }
             json_ok(&serde_json::json!({ "tx_hash": tx_hash_hex }))
         }
         Err(e) => {

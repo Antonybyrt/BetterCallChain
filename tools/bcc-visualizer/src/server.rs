@@ -21,7 +21,7 @@ static INDEX_HTML: &str = include_str!("assets/index.html");
 pub async fn run_server(
     addr:   std::net::SocketAddr,
     bus:    Arc<EventBus>,
-    ports:  Vec<u16>,
+    ports:  Vec<String>,
     cancel: CancellationToken,
 ) {
     let listener = match TcpListener::bind(addr).await {
@@ -54,7 +54,7 @@ pub async fn run_server(
 
 /// Peeks at the first bytes of `stream` to decide whether this is a WebSocket
 /// upgrade or a plain HTTP request, then dispatches accordingly.
-async fn handle_connection(stream: TcpStream, bus: Arc<EventBus>, ports: Vec<u16>) {
+async fn handle_connection(stream: TcpStream, bus: Arc<EventBus>, ports: Vec<String>) {
     const PEEK_BUF: usize = 4096;
     let mut peek = [0u8; PEEK_BUF];
     let n = match stream.peek(&mut peek).await {
@@ -124,7 +124,7 @@ async fn handle_http(
     mut stream: TcpStream,
     preview:    &[u8],
     bus:        Arc<EventBus>,
-    ports:      Vec<u16>,
+    ports:      Vec<String>,
 ) {
     let header_str = String::from_utf8_lossy(preview);
     let first_line = header_str.lines().next().unwrap_or("");
@@ -133,7 +133,7 @@ async fn handle_http(
     let _ = stream.write_all(&response).await;
 }
 
-async fn route(first_line: &str, bus: &Arc<EventBus>, ports: &[u16]) -> Vec<u8> {
+async fn route(first_line: &str, bus: &Arc<EventBus>, ports: &[String]) -> Vec<u8> {
     // GET /
     if first_line.starts_with("GET / ") || first_line == "GET / HTTP/1.1" {
         return http_200("text/html; charset=utf-8", INDEX_HTML.as_bytes());

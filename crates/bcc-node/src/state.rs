@@ -127,10 +127,15 @@ impl PeerSet {
     pub fn broadcast_except(&self, source: &SocketAddr, msg: Message) {
         for (addr, tx) in &self.peers {
             if addr != source {
-                // Non-blocking try_send: drops the message if the peer's outbound buffer is full.
-                // This is intentional — a slow peer should not stall the whole network.
                 let _ = tx.try_send(msg.clone());
             }
+        }
+    }
+
+    /// Sends `msg` to every connected peer (used when there is no originating peer to exclude).
+    pub fn broadcast_all(&self, msg: Message) {
+        for tx in self.peers.values() {
+            let _ = tx.try_send(msg.clone());
         }
     }
 

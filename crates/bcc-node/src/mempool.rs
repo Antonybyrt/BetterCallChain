@@ -18,6 +18,9 @@ pub struct AddedToPool {
     pub pool_size: usize,
     /// Non-empty when a lower-value tx was evicted to make room.
     pub evicted:   Option<String>,
+    /// `true` if the tx was freshly inserted; `false` if it was already present.
+    /// Callers must only gossip when this is `true` to prevent broadcast storms.
+    pub newly_added: bool,
 }
 
 /// In-memory pool of unconfirmed transactions waiting to be included in a block.
@@ -64,7 +67,7 @@ impl Mempool {
             debug!(tx_hash = %tx_hash_hex, "mempool: tx already present, ignoring duplicate");
             let pool_size = self.txs.len();
             let value = self.values.get(&tx_hash).copied().unwrap_or(0);
-            return Ok(AddedToPool { tx_hash: tx_hash_hex, value, pool_size, evicted: None });
+            return Ok(AddedToPool { tx_hash: tx_hash_hex, value, pool_size, evicted: None, newly_added: false });
         }
 
         // Validate against UTXO set.
@@ -128,7 +131,7 @@ impl Mempool {
 
         let pool_size = self.txs.len();
         info!(tx_hash = %tx_hash_hex, value = new_value, pool_size, "mempool: tx accepted");
-        Ok(AddedToPool { tx_hash: tx_hash_hex, value: new_value, pool_size, evicted: evicted_hex })
+        Ok(AddedToPool { tx_hash: tx_hash_hex, value: new_value, pool_size, evicted: evicted_hex, newly_added: true })
     }
 
     /// Removes transactions by their hashes (called after block inclusion).

@@ -27,6 +27,9 @@ pub enum BlockValidationError {
     #[error("block timestamp is before parent timestamp")]
     BadTimestamp,
 
+    #[error("block timestamp {ts} is past the end of slot {slot} (slot ends at {slot_end})")]
+    TimestampBeyondSlot { ts: i64, slot: u64, slot_end: i64 },
+
     #[error("transaction validation failed: {0}")]
     InvalidTransaction(String),
 
@@ -38,12 +41,17 @@ pub enum BlockValidationError {
 }
 
 /// Validates a block against its parent and the current chain state.
-/// Checks in order: height, parent hash, timestamp, proposer election, signature, transactions.
+/// Checks in order: height, parent hash, timestamp, proposer election, signature,
+/// merkle root, transactions.
+///
+/// `slot_duration_secs` is required to enforce that the block timestamp falls
+/// within the boundaries of its declared slot.
 pub fn validate_block(
     block: &Block,
     parent: &Block,
     utxo: &dyn UtxoStore,
     validators: &dyn ValidatorStore,
+    slot_duration_secs: u64,
 ) -> Result<(), BlockValidationError> {
     // 1. Height must be exactly parent + 1.
     if block.header.height != parent.header.height + 1 {
@@ -58,6 +66,17 @@ pub fn validate_block(
     // 3. Timestamp must not be before parent's.
     if block.header.timestamp < parent.header.timestamp {
         return Err(BlockValidationError::BadTimestamp);
+    }
+
+    // 3b. Timestamp must be within the block's declared slot.
+    // A block for slot S must have timestamp < (S+1) * slot_duration.
+    let slot_end = (block.header.slot as i64 + 1) * slot_duration_secs as i64;
+    if block.header.timestamp >= slot_end {
+        return Err(BlockValidationError::TimestampBeyondSlot {
+            ts:       block.header.timestamp,
+            slot:     block.header.slot,
+            slot_end,
+        });
     }
 
     // 4. Proposer must match the deterministic election result.

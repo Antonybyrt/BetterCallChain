@@ -341,6 +341,15 @@ impl ValidatorStore for SledStore {
     }
 
     fn upsert(&self, validator: &Validator) -> StoreResult<()> {
+        let expected = bcc_core::types::address::Address::from_pubkey_bytes(
+            validator.pubkey.as_bytes(),
+        );
+        if validator.address != expected {
+            return Err(StoreError::Backend(format!(
+                "validator address {} does not match pubkey (expected {})",
+                validator.address, expected
+            )));
+        }
         let key   = validator.address.as_str().as_bytes().to_vec();
         let value = encode(validator)?;
         self.validators

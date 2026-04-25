@@ -1,10 +1,10 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use bcc_client::rpc::RpcClient;
+use bcc_client::rpc::{RpcClient, UtxoItem};
+use bcc_client::split::split_utxo;
 use bcc_client::wallet::{build_transfer, select_coins};
 use bcc_core::types::address::Address;
-use chrono::Utc;
 use ed25519_dalek::SigningKey;
 use serde::{Deserialize, Serialize};
 use tracing::info;
@@ -41,8 +41,8 @@ pub struct ScenarioResult {
     pub steps: Vec<ScenarioStep>,
 }
 
-fn node_urls(base_ports: &[u16]) -> Vec<String> {
-    base_ports.iter().map(|p| format!("http://127.0.0.1:{}", p)).collect()
+fn node_urls(urls: &[String]) -> Vec<String> {
+    urls.to_vec()
 }
 
 fn funder_key() -> SigningKey {
@@ -68,7 +68,8 @@ fn publish_step(bus: &Arc<EventBus>, scenario: &str, step: &str, status: &str, d
     );
 }
 
-pub async fn run_scenario(name: &str, ports: &[u16], bus: Arc<EventBus>) -> ScenarioResult {
+
+pub async fn run_scenario(name: &str, ports: &[String], bus: Arc<EventBus>) -> ScenarioResult {
     info!(scenario = name, "starting scenario");
     publish_step(&bus, name, "init", "start", "Scenario started");
 
@@ -97,7 +98,7 @@ pub async fn run_scenario(name: &str, ports: &[u16], bus: Arc<EventBus>) -> Scen
     result
 }
 
-async fn scenario_single_transfer(ports: &[u16], bus: &Arc<EventBus>) -> ScenarioResult {
+async fn scenario_single_transfer(ports: &[String], bus: &Arc<EventBus>) -> ScenarioResult {
     let name = "single_transfer";
     let start = Instant::now();
     let mut steps = Vec::new();
@@ -192,7 +193,7 @@ async fn scenario_single_transfer(ports: &[u16], bus: &Arc<EventBus>) -> Scenari
     }
 }
 
-async fn scenario_concurrent_sends(ports: &[u16], bus: &Arc<EventBus>) -> ScenarioResult {
+async fn scenario_concurrent_sends(ports: &[String], bus: &Arc<EventBus>) -> ScenarioResult {
     let name = "concurrent_sends";
     let start = Instant::now();
     let mut steps = Vec::new();
@@ -201,35 +202,51 @@ async fn scenario_concurrent_sends(ports: &[u16], bus: &Arc<EventBus>) -> Scenar
     let funder_addr = Address::validate(FUNDER_ADDR).unwrap();
     let amounts = [11_000u64, 22_000, 33_000, 44_000, 55_000];
 
-    publish_step(bus, name, "submit", "start", "Submitting 5 TXs to 5 different nodes simultaneously");
+    // Fetch the largest UTXO and split it into `amounts.len()` parts via binary doubling.
+    publish_step(bus, name, "split", "start",
+        "Splitting largest funder UTXO into 5 independent parts (binary doubling)");
+    let client0 = RpcClient::new(&urls[0]);
 
-    let utxos = match RpcClient::new(&urls[0]).get_utxos(FUNDER_ADDR).await {
-        Ok(u) => u,
-        Err(e) => return fail_result(name, start, steps, format!("fetch UTXOs: {}", e)),
+    let input_utxo = {
+        let mut all = match client0.get_utxos(FUNDER_ADDR).await {
+            Ok(u) if !u.is_empty() => u,
+            Ok(_)  => return fail_result(name, start, steps, "funder has no UTXOs".to_string()),
+            Err(e) => return fail_result(name, start, steps, format!("GET /utxos: {e}")),
+        };
+        all.sort_unstable_by(|a, b| b.amount.cmp(&a.amount));
+        all.remove(0)
     };
 
-    // Build 5 independent txs (non-overlapping UTXOs)
-    let mut remaining = utxos.clone();
+    let mut utxos = match split_utxo(&client0, &key, &funder_addr, input_utxo, amounts.len()).await {
+        Ok(u) => u,
+        Err(e) => {
+            publish_step(bus, name, "split", "fail", &e);
+            return fail_result(name, start, steps, e);
+        }
+    };
+    steps.push(ok_step("split", &format!("{} UTXOs ready", utxos.len()), start));
+    publish_step(bus, name, "split", "pass", &format!("{} UTXOs confirmed", utxos.len()));
+
+    if utxos.len() < amounts.len() {
+        let msg = format!("Not enough UTXOs: have {}, need {}", utxos.len(), amounts.len());
+        return fail_result(name, start, steps, msg);
+    }
+
+    // Sort ascending and assign 1 UTXO per transaction — no chaining, no placeholders.
+    utxos.sort_unstable_by_key(|u| u.amount);
     let mut txs = Vec::new();
     for (i, &amount) in amounts.iter().enumerate() {
-        match select_coins(&remaining, amount) {
-            Ok(sel) => {
-                let selected_refs: std::collections::HashSet<_> =
-                    sel.selected.iter().map(|u| u.tx_hash.clone()).collect();
-                remaining.retain(|u| !selected_refs.contains(&u.tx_hash));
-
-                let recipient = recipient_addr(0x10 + i as u8);
-                match build_transfer(&key, sel.selected, &recipient, amount, &funder_addr) {
-                    Ok(tx) => txs.push((i, tx, recipient)),
-                    Err(e) => return fail_result(name, start, steps, format!("build tx {}: {}", i, e)),
-                }
-            }
-            Err(e) => return fail_result(name, start, steps, format!("coin select {}: {}", i, e)),
+        let utxo = vec![utxos[i].clone()];
+        let recipient = recipient_addr(0x10 + i as u8);
+        match build_transfer(&key, utxo, &recipient, amount, &funder_addr) {
+            Ok(tx) => txs.push((tx, recipient, amount)),
+            Err(e) => return fail_result(name, start, steps, format!("build tx {i}: {e}")),
         }
     }
 
-    // Submit all concurrently
-    let submit_futures: Vec<_> = txs.iter().enumerate().map(|(i, (_, tx, _))| {
+    // Submit all 5 concurrently, each to a different node.
+    publish_step(bus, name, "submit", "start", "Submitting 5 TXs to 5 different nodes simultaneously");
+    let submit_futures: Vec<_> = txs.iter().enumerate().map(|(i, (tx, _, _))| {
         let client = RpcClient::new(&urls[i % urls.len()]);
         let tx = tx.clone();
         async move { (i, client.post_tx(&tx).await) }
@@ -242,39 +259,35 @@ async fn scenario_concurrent_sends(ports: &[u16], bus: &Arc<EventBus>) -> Scenar
             Ok(r) => {
                 submitted += 1;
                 publish_step(bus, name, "submit", "progress",
-                    &format!("TX {} submitted: {}", i, &r.tx_hash[..16]));
+                    &format!("TX {i} accepted: {}", &r.tx_hash[..16]));
             }
-            Err(e) => {
-                publish_step(bus, name, "submit", "progress",
-                    &format!("TX {} failed: {}", i, e));
-            }
+            Err(e) => publish_step(bus, name, "submit", "progress",
+                &format!("TX {i} rejected: {e}")),
         }
     }
-    steps.push(ok_step("submit", &format!("{}/{} TXs submitted", submitted, amounts.len()), start));
+    steps.push(ok_step("submit", &format!("{submitted}/{} TXs submitted", amounts.len()), start));
 
-    // Wait for all recipients to confirm on all nodes
-    publish_step(bus, name, "propagation", "start", "Waiting for all TXs to confirm (up to 60s)");
+    // Verify all recipients on all nodes in parallel.
+    publish_step(bus, name, "propagation", "start", "Waiting for all TXs to confirm on all nodes (60s)");
     let deadline = Instant::now() + Duration::from_secs(60);
-
     loop {
         if Instant::now() > deadline {
             return fail_result(name, start, steps, "TXs did not confirm within 60s".into());
         }
         let mut all_confirmed = true;
-        for (i, (_, _, recipient)) in txs.iter().enumerate() {
+        for (_, recipient, amount) in &txs {
             let addr = recipient.to_string();
-            let amount = amounts[i];
+            let amt = *amount;
             let checks: Vec<_> = urls.iter().map(|u| {
                 let c = RpcClient::new(u);
                 let a = addr.clone();
                 async move { c.get_balance(&a).await.map(|r| r.balance).unwrap_or(0) }
             }).collect();
             let balances = futures::future::join_all(checks).await;
-            let confirmed = balances.iter().filter(|&&b| b == amount).count();
-            if confirmed < urls.len() {
-                all_confirmed = false;
-                break;
-            }
+            let confirmed = balances.iter().filter(|&&b| b == amt).count();
+            publish_step(bus, name, "propagation", "progress",
+                &format!("{addr}: {confirmed}/{} nodes", urls.len()));
+            if confirmed < urls.len() { all_confirmed = false; break; }
         }
         if all_confirmed {
             steps.push(ok_step("propagation", "All TXs confirmed on all nodes", start));
@@ -292,7 +305,7 @@ async fn scenario_concurrent_sends(ports: &[u16], bus: &Arc<EventBus>) -> Scenar
     }
 }
 
-async fn scenario_double_spend(ports: &[u16], bus: &Arc<EventBus>) -> ScenarioResult {
+async fn scenario_double_spend(ports: &[String], bus: &Arc<EventBus>) -> ScenarioResult {
     let name = "double_spend";
     let start = Instant::now();
     let mut steps = Vec::new();
@@ -376,7 +389,7 @@ async fn scenario_double_spend(ports: &[u16], bus: &Arc<EventBus>) -> ScenarioRe
     }
 }
 
-async fn scenario_mempool_flood(ports: &[u16], bus: &Arc<EventBus>) -> ScenarioResult {
+async fn scenario_mempool_flood(ports: &[String], bus: &Arc<EventBus>) -> ScenarioResult {
     let name = "mempool_flood";
     let start = Instant::now();
     let mut steps = Vec::new();
@@ -397,14 +410,20 @@ async fn scenario_mempool_flood(ports: &[u16], bus: &Arc<EventBus>) -> ScenarioR
         Err(e) => return fail_result(name, start, steps, format!("get tip: {}", e)),
     };
 
-    // Build as many independent TXs as possible
-    let mut remaining = utxos.clone();
+    // Build as many independent TXs as possible from distinct UTXOs.
+    // Each selected UTXO is tracked by (tx_hash, index) to avoid re-use.
+    let mut spent_keys = std::collections::HashSet::new();
     let mut txs = Vec::new();
     for i in 0..TX_COUNT {
-        if let Ok(sel) = select_coins(&remaining, AMOUNT) {
-            let refs: std::collections::HashSet<_> =
-                sel.selected.iter().map(|u| u.tx_hash.clone()).collect();
-            remaining.retain(|u| !refs.contains(&u.tx_hash));
+        // Only offer UTXOs not yet committed locally.
+        let available: Vec<_> = utxos.iter()
+            .filter(|u| !spent_keys.contains(&(u.tx_hash.clone(), u.index)))
+            .cloned()
+            .collect();
+        if let Ok(sel) = select_coins(&available, AMOUNT) {
+            for u in &sel.selected {
+                spent_keys.insert((u.tx_hash.clone(), u.index));
+            }
             let recipient = recipient_addr(i as u8);
             if let Ok(tx) = build_transfer(&key, sel.selected, &recipient, AMOUNT, &funder_addr) {
                 txs.push(tx);
@@ -454,7 +473,7 @@ async fn scenario_mempool_flood(ports: &[u16], bus: &Arc<EventBus>) -> ScenarioR
     }
 }
 
-async fn scenario_chain_consistency(ports: &[u16], bus: &Arc<EventBus>) -> ScenarioResult {
+async fn scenario_chain_consistency(ports: &[String], bus: &Arc<EventBus>) -> ScenarioResult {
     let name = "chain_consistency";
     let start = Instant::now();
     let mut steps = Vec::new();
@@ -468,13 +487,17 @@ async fn scenario_chain_consistency(ports: &[u16], bus: &Arc<EventBus>) -> Scena
         Err(e) => return fail_result(name, start, steps, format!("fetch UTXOs: {}", e)),
     };
 
-    let mut remaining = utxos;
+    let mut spent_keys = std::collections::HashSet::new();
     let mut futures_tx = Vec::new();
     for i in 0..10usize {
-        if let Ok(sel) = select_coins(&remaining, 1_000) {
-            let refs: std::collections::HashSet<_> =
-                sel.selected.iter().map(|u| u.tx_hash.clone()).collect();
-            remaining.retain(|u| !refs.contains(&u.tx_hash));
+        let available: Vec<_> = utxos.iter()
+            .filter(|u| !spent_keys.contains(&(u.tx_hash.clone(), u.index)))
+            .cloned()
+            .collect();
+        if let Ok(sel) = select_coins(&available, 1_000) {
+            for u in &sel.selected {
+                spent_keys.insert((u.tx_hash.clone(), u.index));
+            }
             let recipient = recipient_addr((0x20 + i) as u8);
             if let Ok(tx) = build_transfer(&key, sel.selected, &recipient, 1_000, &funder_addr) {
                 let client = RpcClient::new(&urls[i % urls.len()]);
@@ -524,7 +547,7 @@ async fn scenario_chain_consistency(ports: &[u16], bus: &Arc<EventBus>) -> Scena
     }
 }
 
-async fn scenario_validator_rotation(ports: &[u16], bus: &Arc<EventBus>) -> ScenarioResult {
+async fn scenario_validator_rotation(ports: &[String], bus: &Arc<EventBus>) -> ScenarioResult {
     let name = "validator_rotation";
     let start = Instant::now();
     let mut steps = Vec::new();

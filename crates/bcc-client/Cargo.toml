@@ -30,8 +30,9 @@ tokio = { version = "1.50.0", features = ["full"] }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 
+futures = "0.3"
+
 [dev-dependencies]
-futures     = "0.3"
 mockito     = "1.7.2"
 tempfile    = "3.27.0"
 tokio-test  = "0.4.5"

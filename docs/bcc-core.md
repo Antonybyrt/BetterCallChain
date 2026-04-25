@@ -31,7 +31,7 @@ prev_hash | merkle_root | timestamp | height | slot | proposer
 `Block::hash()` = `sha256d(serialize(header))` — signature excluded by design.
 
 **`Transaction`** — UTXO model.
-- `TxInput` references a past unspent output (`TxOutRef`) and carries the spend signature.
+- `TxInput` references a past unspent output (`TxOutRef`) and carries the spend signature and public key.
 - `TxOutput` assigns an amount to an address.
 - `TxKind`: `Transfer | Stake { amount } | Unstake { amount }`
 
@@ -44,26 +44,36 @@ prev_hash | merkle_root | timestamp | height | slot | proposer
 Deterministic weighted election:
 1. Seed = `sha256d(prev_hash || slot)`
 2. `pick = seed[..8] as u64 % total_stake`
-3. Linear scan over validators — each occupies a segment proportional to their stake.
+3. Linear scan over validators sorted by address — each occupies a segment proportional to their stake.
 
 All nodes reach the same result with no communication.
 
 ### `validation`
 
-**`validate_block(block, parent, utxo, validators)`**
+**`validate_block(block, parent, utxo, validators, slot_duration_secs)`**
 Checks in order:
 1. `height == parent.height + 1`
 2. `prev_hash == parent.hash()`
 3. `timestamp >= parent.timestamp`
-4. proposer matches `elect_proposer` result
-5. block signature valid against header bytes
-6. all transactions valid (see below)
+4. `timestamp < (slot + 1) * slot_duration_secs` — prevents far-future timestamps
+5. proposer matches `elect_proposer` result
+6. block signature valid against header bytes
+7. `merkle_root == compute_merkle_root(txs)` — detects transaction tampering
+8. all transactions valid (see below)
 
 **`validate_transaction(tx, utxo)`**
 1. outputs not empty
 2. no zero-value output
-3. all inputs exist in UTXO set
+3. for each input:
+   - input exists in UTXO set
+   - `Address::from_pubkey_bytes(input.pubkey)` matches the UTXO owner
+   - Ed25519 signature valid over `TxSigningData` (see below)
 4. `sum(inputs) >= sum(outputs)`
+
+**`tx_signing_bytes(tx) -> Vec<u8>`** — public helper.
+Returns the canonical signing message: `bincode(TxSigningData { kind, input_out_refs, outputs })`.
+Signatures excluded from the message to avoid circular dependency.
+Use this when building transactions.
 
 ### `store`
 
@@ -75,10 +85,11 @@ Three traits, two implementations:
 | `UtxoStore` | `get`, `apply_block`, `rollback_block`, `balance`, `list_utxos` |
 | `ValidatorStore` | `get`, `all_active`, `upsert` |
 
-`list_utxos(address) -> Vec<(TxOutRef, TxOutput)>` — returns all unspent outputs
-for a given address. Used by `bcc-client` for coin selection.
+`ValidatorStore::upsert` validates that `validator.address` is derived from `validator.pubkey` — mismatched pairs are rejected with `StoreError::Backend`.
 
 `MemoryStore` — in-memory impl using `BTreeMap` + `HashMap` behind `RwLock`. For tests only.
+Stores spent outputs keyed by block height so `rollback_block` can fully restore the UTXO set.
+
 `SledStore` — persistent impl backed by [sled](https://github.com/spacejam/sled), lives in `bcc-node` (see bcc-node.md).
 
 ### `error`

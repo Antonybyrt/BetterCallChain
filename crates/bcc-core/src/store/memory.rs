@@ -173,6 +173,15 @@ impl ValidatorStore for MemoryStore {
     }
 
     fn upsert(&self, validator: &Validator) -> StoreResult<()> {
+        let expected = crate::types::address::Address::from_pubkey_bytes(
+            validator.pubkey.as_bytes(),
+        );
+        if validator.address != expected {
+            return Err(crate::store::StoreError::Backend(format!(
+                "validator address {} does not match pubkey (expected {})",
+                validator.address, expected
+            )));
+        }
         self.validators
             .write()
             .unwrap()

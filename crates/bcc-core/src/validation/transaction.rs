@@ -40,6 +40,19 @@ struct TxSigningData<'a> {
     outputs: &'a [TxOutput],
 }
 
+/// Returns the canonical bytes that every input of `tx` must sign.
+///
+/// Callers building transactions should sign these bytes with their Ed25519
+/// key and store the resulting `Signature` in each `TxInput`.
+pub fn tx_signing_bytes(tx: &Transaction) -> Vec<u8> {
+    let data = TxSigningData {
+        kind:    &tx.kind,
+        inputs:  tx.inputs.iter().map(|i| &i.out_ref).collect(),
+        outputs: &tx.outputs,
+    };
+    bincode::serialize(&data).expect("TxSigningData serialization is infallible")
+}
+
 /// Validates a transaction against the current UTXO set.
 /// Enforces: all inputs exist, pubkeys match UTXO owners, signatures are valid,
 /// no zero-value outputs, sum(inputs) >= sum(outputs).

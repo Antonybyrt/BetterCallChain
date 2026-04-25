@@ -51,6 +51,23 @@ pub async fn run_peer(
     };
     info!(%addr, peer_count, "peer connected");
     state.emit(DebugEvent::PeerConnected { addr: addr.to_string(), peer_count });
+
+    // Send our current tip to the new peer immediately.
+    // This covers the race where we proposed a block just before this peer
+    // connected and the broadcast::Sender had no subscribers yet.
+    if let Ok(Some((tip_height, _))) = state.blocks.tip() {
+        if let Ok(Some(tip_block)) = state.blocks.get_by_height(tip_height) {
+            let msg = Message::NewBlock { block: Box::new(tip_block) };
+            if encode_send(&mut framed, &msg).await.is_err() {
+                // Peer disconnected immediately — clean up and exit.
+                let peer_count = { let mut p = state.peers.write().await; p.remove(&addr); p.len() };
+                info!(%addr, peer_count, "peer disconnected");
+                state.emit(DebugEvent::PeerDisconnected { addr: addr.to_string(), peer_count });
+                return;
+            }
+        }
+    }
+
     let mut block_sub = state.new_block.subscribe();
 
     loop {
@@ -166,6 +183,7 @@ async fn dispatch(
 
                 if let Err(e) = validate_block(
                     &block, &parent, &*state.utxo, &*state.validators,
+                    state.config.slot_duration_secs,
                 ) {
                     warn!(
                         from = %source, height = block_height,
@@ -247,6 +265,7 @@ async fn dispatch(
 
                 if let Err(e) = validate_block(
                     &block, &parent, &*state.utxo, &*state.validators,
+                    state.config.slot_duration_secs,
                 ) {
                     warn!(
                         from = %source, height = block_height,
@@ -307,20 +326,24 @@ async fn dispatch(
             let tx_hash = hex::encode(tx.hash());
             match state.mempool.lock().await.add(tx.clone(), &*state.utxo) {
                 Ok(added) => {
-                    debug!(from = %source, tx_hash = %tx_hash, "p2p: tx gossip accepted, re-broadcasting");
-                    if let Some(ev) = &added.evicted {
-                        state.emit(DebugEvent::TxEvicted { evicted: ev.clone(), new_tx: added.tx_hash.clone() });
+                    if added.newly_added {
+                        debug!(from = %source, tx_hash = %tx_hash, "p2p: tx gossip accepted, re-broadcasting");
+                        if let Some(ev) = &added.evicted {
+                            state.emit(DebugEvent::TxEvicted { evicted: ev.clone(), new_tx: added.tx_hash.clone() });
+                        }
+                        state.emit(DebugEvent::TxAccepted {
+                            tx_hash:   added.tx_hash.clone(),
+                            value:     added.value,
+                            pool_size: added.pool_size,
+                        });
+                        state.emit(DebugEvent::TxGossipAccepted {
+                            from:    source.to_string(),
+                            tx_hash: tx_hash.clone(),
+                        });
+                        state.peers.read().await.broadcast_except(&source, Message::NewTx { tx });
+                    } else {
+                        debug!(from = %source, tx_hash = %tx_hash, "p2p: tx already known — not re-broadcasting");
                     }
-                    state.emit(DebugEvent::TxAccepted {
-                        tx_hash:   added.tx_hash.clone(),
-                        value:     added.value,
-                        pool_size: added.pool_size,
-                    });
-                    state.emit(DebugEvent::TxGossipAccepted {
-                        from:    source.to_string(),
-                        tx_hash: tx_hash.clone(),
-                    });
-                    state.peers.read().await.broadcast_except(&source, Message::NewTx { tx });
                 }
                 Err(e) => {
                     debug!(from = %source, tx_hash = %tx_hash, reason = %e, "p2p: tx gossip rejected");

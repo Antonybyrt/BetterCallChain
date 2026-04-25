@@ -17,8 +17,8 @@ const MAX_FRAME_LEN: usize = 16 * 1024 * 1024;
 const BLOCKS_PER_REQUEST: u64 = 256;
 /// Retry IBD from scratch if all peers fail before we sync any block.
 /// Covers the Docker startup race where peers aren't ready yet.
-const MAX_IBD_RETRIES: usize = 10;
-const IBD_RETRY_DELAY_SECS: u64 = 3;
+const MAX_IBD_RETRIES: usize = 5;
+const IBD_RETRY_DELAY_SECS: u64 = 1;
 
 /// Downloads the canonical chain from bootstrap peers until we are in sync.
 ///
@@ -159,6 +159,7 @@ pub async fn run_ibd(state: &NodeState, cancel: &CancellationToken) -> Result<()
                                     validate_block(
                                         block, &parent,
                                         &*state.utxo, &*state.validators,
+                                        state.config.slot_duration_secs,
                                     )
                                     .map_err(|e| NodeError::Validation(format!(
                                         "IBD: invalid block at height {}: {}", block.header.height, e

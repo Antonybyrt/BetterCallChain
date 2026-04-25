@@ -5,15 +5,22 @@ use bcc_core::{
         block::{Block, BlockHeader},
         transaction::{Transaction, TxInput, TxKind, TxOutRef, TxOutput},
     },
+    validation::transaction::tx_signing_bytes,
 };
 use bcc_node::mempool::Mempool;
-use ed25519_dalek::{Signature, SigningKey};
+use ed25519_dalek::{Signature, SigningKey, Signer};
 
-fn any_addr() -> Address {
-    Address::from_pubkey_bytes(&[0u8; 32])
+/// Fixed test signing key — deterministic across all tests.
+fn test_key() -> SigningKey {
+    SigningKey::from_bytes(&[1u8; 32])
 }
 
-/// Seeds a `MemoryStore` with N UTXOs by applying one coinbase-like block per amount.
+/// Address that corresponds to `test_key()`.
+fn test_addr() -> Address {
+    Address::from_pubkey_bytes(test_key().verifying_key().as_bytes())
+}
+
+/// Seeds a `MemoryStore` with N UTXOs owned by `test_addr()`.
 fn make_store_with_utxos(amounts: &[u64]) -> (MemoryStore, Vec<TxOutRef>) {
     let store = MemoryStore::new();
     let mut refs = Vec::new();
@@ -21,10 +28,10 @@ fn make_store_with_utxos(amounts: &[u64]) -> (MemoryStore, Vec<TxOutRef>) {
         let tx = Transaction {
             kind: TxKind::Transfer,
             inputs: vec![],
-            outputs: vec![TxOutput { amount, address: any_addr() }],
+            outputs: vec![TxOutput { amount, address: test_addr() }],
         };
         let tx_hash = tx.hash();
-        let proposer = Address::from_pubkey_bytes(&[i as u8; 32]);
+        let proposer = Address::from_pubkey_bytes(&[i as u8 + 10; 32]);
         let block = Block {
             header: BlockHeader {
                 prev_hash: [0u8; 32],
@@ -43,16 +50,23 @@ fn make_store_with_utxos(amounts: &[u64]) -> (MemoryStore, Vec<TxOutRef>) {
     (store, refs)
 }
 
+/// Builds a transaction spending `out_ref` and signs it with `test_key()`.
 fn make_tx(out_ref: TxOutRef, amount: u64) -> Transaction {
-    Transaction {
+    let key = test_key();
+    // Build unsigned skeleton to compute the signing bytes.
+    let mut tx = Transaction {
         kind: TxKind::Transfer,
         inputs: vec![TxInput {
-            out_ref,
-            signature: Signature::from_bytes(&[0u8; 64]),
-            pubkey: SigningKey::from_bytes(&[0u8; 32]).verifying_key(),
+            out_ref: out_ref.clone(),
+            signature: Signature::from_bytes(&[0u8; 64]), // placeholder
+            pubkey: key.verifying_key(),
         }],
-        outputs: vec![TxOutput { amount, address: any_addr() }],
-    }
+        outputs: vec![TxOutput { amount, address: test_addr() }],
+    };
+    // Sign the canonical message and replace the placeholder.
+    let msg = tx_signing_bytes(&tx);
+    tx.inputs[0].signature = key.sign(&msg);
+    tx
 }
 
 /// Adding two transactions that spend the same input must fail.
