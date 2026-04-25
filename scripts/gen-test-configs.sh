@@ -17,6 +17,7 @@ if [ ! -x "$BIN" ]; then
 fi
 
 mkdir -p "$CONFIG_DIR"
+chmod 755 "$CONFIG_DIR"
 
 # Docker-compose assigns 172.30.0.2–172.30.0.6 to node1–node5.
 IPS=(172.30.0.2 172.30.0.3 172.30.0.4 172.30.0.5 172.30.0.6)
@@ -66,7 +67,15 @@ TIMESTAMP=$(date +%s)
     done
 } > "$GENESIS"
 
+# Test funder wallet — seed [0x42;32] — used by integration tests and visualizer scenarios.
+printf '\n[[accounts]]\naddress = "bcs13097e2dee2cb4a34b53840cdb705aed71067c36f"\nbalance = 1000000000000\n' >> "$GENESIS"
+
 echo ""
 echo "Done."
 echo "  Configs : $CONFIG_DIR/node{1..${N}}.toml"
 echo "  Genesis : $GENESIS"
+echo ""
+echo "To fund your own wallet before starting the network, add to $GENESIS:"
+echo "  [[accounts]]"
+echo "  address = \"bcs1<your address>\""
+echo "  balance = 1000000000000"

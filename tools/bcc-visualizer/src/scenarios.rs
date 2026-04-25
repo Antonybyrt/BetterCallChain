@@ -16,7 +16,6 @@ use bcc_node::debug_event::DebugEvent;
 use crate::event_bus::EventBus;
 
 const FUNDER_SEED: [u8; 32] = [0x42; 32];
-const FUNDER_ADDR: &str = "bcs13097e2dee2cb4a34b53840cdb705aed71067c36f";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
@@ -44,6 +43,10 @@ pub struct ScenarioResult {
 
 fn funder_key() -> SigningKey {
     SigningKey::from_bytes(&FUNDER_SEED)
+}
+
+fn funder_addr() -> Address {
+    Address::from_pubkey_bytes(funder_key().verifying_key().as_bytes())
 }
 
 fn recipient_addr(tag: u8) -> Address {
@@ -165,12 +168,12 @@ async fn scenario_single_transfer(ports: &[String], bus: &Arc<EventBus>) -> Scen
     let urls = ports.to_vec();
     let client0 = RpcClient::new(&urls[0]);
     let key = funder_key();
-    let funder_addr = Address::validate(FUNDER_ADDR).unwrap();
+    let funder_addr = funder_addr();
     let recipient = recipient_addr(0xAA);
     let amount = 100_000u64;
 
     publish_step(bus, name, "fetch_utxos", "start", "Fetching funder UTXOs from node1");
-    let utxos = match client0.get_utxos(FUNDER_ADDR).await {
+    let utxos = match client0.get_utxos(funder_addr.as_str()).await {
         Ok(u) => u,
         Err(e) => {
             let msg = format!("Failed to fetch UTXOs: {}", e);
@@ -249,7 +252,7 @@ async fn scenario_concurrent_sends(ports: &[String], bus: &Arc<EventBus>) -> Sce
     let mut steps = Vec::new();
     let urls = ports.to_vec();
     let key = funder_key();
-    let funder_addr = Address::validate(FUNDER_ADDR).unwrap();
+    let funder_addr = funder_addr();
     let amounts = [11_000u64, 22_000, 33_000, 44_000, 55_000];
 
     publish_step(bus, name, "split", "start",
@@ -257,7 +260,7 @@ async fn scenario_concurrent_sends(ports: &[String], bus: &Arc<EventBus>) -> Sce
     let client0 = RpcClient::new(&urls[0]);
 
     let input_utxo = {
-        let mut all = match client0.get_utxos(FUNDER_ADDR).await {
+        let mut all = match client0.get_utxos(funder_addr.as_str()).await {
             Ok(u) if !u.is_empty() => u,
             Ok(_)  => return fail_result(name, start, steps, "funder has no UTXOs".into()),
             Err(e) => return fail_result(name, start, steps, format!("GET /utxos: {e}")),
@@ -356,12 +359,12 @@ async fn scenario_double_spend(ports: &[String], bus: &Arc<EventBus>) -> Scenari
     let mut steps = Vec::new();
     let urls = ports.to_vec();
     let key = funder_key();
-    let funder_addr = Address::validate(FUNDER_ADDR).unwrap();
+    let funder_addr = funder_addr();
     let recipient = recipient_addr(0xFF);
     let amount = 5_000u64;
 
     publish_step(bus, name, "setup", "start", "Fetching UTXOs for double-spend test");
-    let utxos = match RpcClient::new(&urls[0]).get_utxos(FUNDER_ADDR).await {
+    let utxos = match RpcClient::new(&urls[0]).get_utxos(funder_addr.as_str()).await {
         Ok(u) if !u.is_empty() => u,
         Ok(_)  => return fail_result(name, start, steps, "no UTXOs available".into()),
         Err(e) => return fail_result(name, start, steps, format!("fetch UTXOs: {}", e)),
@@ -432,12 +435,12 @@ async fn scenario_mempool_flood(ports: &[String], bus: &Arc<EventBus>) -> Scenar
     let mut steps = Vec::new();
     let urls = ports.to_vec();
     let key = funder_key();
-    let funder_addr = Address::validate(FUNDER_ADDR).unwrap();
+    let funder_addr = funder_addr();
     const TX_COUNT: usize = 30;
     const AMOUNT: u64 = 1_000;
 
     publish_step(bus, name, "setup", "start", &format!("Preparing up to {} TXs", TX_COUNT));
-    let utxos = match RpcClient::new(&urls[0]).get_utxos(FUNDER_ADDR).await {
+    let utxos = match RpcClient::new(&urls[0]).get_utxos(funder_addr.as_str()).await {
         Ok(u) => u,
         Err(e) => return fail_result(name, start, steps, format!("fetch UTXOs: {}", e)),
     };
@@ -552,7 +555,7 @@ async fn scenario_balance_conservation(ports: &[String], bus: &Arc<EventBus>) ->
     let mut steps = Vec::new();
     let urls = ports.to_vec();
     let key = funder_key();
-    let funder_addr = Address::validate(FUNDER_ADDR).unwrap();
+    let funder_addr = funder_addr();
     let amounts = [5_000u64, 7_000, 9_000, 11_000, 13_000];
     let recipients: Vec<Address> = (0..amounts.len())
         .map(|i| recipient_addr(0x50 + i as u8))
@@ -560,9 +563,10 @@ async fn scenario_balance_conservation(ports: &[String], bus: &Arc<EventBus>) ->
 
     // Snapshot the funder's balance before any transfers.
     publish_step(bus, name, "snapshot", "start", "Reading initial funder balance on all nodes");
+    let funder_str = funder_addr.to_string();
     let initial_balances = futures::future::join_all(
-        urls.iter().map(|u| { let c = RpcClient::new(u);
-            async move { c.get_balance(FUNDER_ADDR).await.map(|r| r.balance) }
+        urls.iter().map(|u| { let c = RpcClient::new(u); let a = funder_str.clone();
+            async move { c.get_balance(&a).await.map(|r| r.balance) }
         })
     ).await;
 
@@ -585,7 +589,7 @@ async fn scenario_balance_conservation(ports: &[String], bus: &Arc<EventBus>) ->
         &format!("Splitting funder UTXO into {} independent parts", amounts.len()));
     let client0 = RpcClient::new(&urls[0]);
     let input_utxo = {
-        let mut all = match client0.get_utxos(FUNDER_ADDR).await {
+        let mut all = match client0.get_utxos(funder_addr.as_str()).await {
             Ok(u) if !u.is_empty() => u,
             Ok(_)  => return fail_result(name, start, steps, "funder has no UTXOs".into()),
             Err(e) => return fail_result(name, start, steps, format!("fetch UTXOs: {e}")),
@@ -662,7 +666,7 @@ async fn scenario_balance_conservation(ports: &[String], bus: &Arc<EventBus>) ->
     let mut violations = Vec::new();
     for (ni, url) in urls.iter().enumerate() {
         let client = RpcClient::new(url);
-        let funder_bal = match client.get_balance(FUNDER_ADDR).await {
+        let funder_bal = match client.get_balance(funder_addr.as_str()).await {
             Ok(r) => r.balance,
             Err(e) => return fail_result(name, start, steps, format!("node{ni} funder balance: {e}")),
         };
@@ -705,10 +709,11 @@ async fn scenario_invalid_tx_rejection(ports: &[String], bus: &Arc<EventBus>) ->
     let mut steps = Vec::new();
     let urls = ports.to_vec();
     let key = funder_key();
+    let funder_addr = funder_addr();
 
     // Fetch a real UTXO to use as a valid reference in our malformed TXs.
     publish_step(bus, name, "setup", "start", "Fetching a real UTXO as base for invalid TXs");
-    let utxos = match RpcClient::new(&urls[0]).get_utxos(FUNDER_ADDR).await {
+    let utxos = match RpcClient::new(&urls[0]).get_utxos(funder_addr.as_str()).await {
         Ok(u) if !u.is_empty() => u,
         Ok(_)  => return fail_result(name, start, steps, "funder has no UTXOs".into()),
         Err(e) => return fail_result(name, start, steps, format!("fetch UTXOs: {e}")),
