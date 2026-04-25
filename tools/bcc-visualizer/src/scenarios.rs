@@ -9,8 +9,9 @@ use ed25519_dalek::SigningKey;
 use serde::{Deserialize, Serialize};
 use tracing::info;
 
+use bcc_node::debug_event::DebugEvent;
+
 use crate::event_bus::EventBus;
-use crate::parser::NodeEvent;
 
 // Test funder wallet (mirrors integration_docker.rs)
 const FUNDER_SEED: [u8; 32] = [0x42; 32];
@@ -56,15 +57,13 @@ fn recipient_addr(tag: u8) -> Address {
 }
 
 fn publish_step(bus: &Arc<EventBus>, scenario: &str, step: &str, status: &str, detail: &str) {
-    bus.publish_raw(
+    bus.publish_local(
         "visualizer".to_string(),
-        Utc::now(),
-        "INFO".to_string(),
-        NodeEvent::ScenarioEvent {
+        DebugEvent::ScenarioEvent {
             scenario: scenario.to_string(),
-            step: step.to_string(),
-            status: status.to_string(),
-            detail: detail.to_string(),
+            step:     step.to_string(),
+            status:   status.to_string(),
+            detail:   detail.to_string(),
         },
     );
 }

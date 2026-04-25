@@ -12,7 +12,7 @@ use ed25519_dalek::Signer;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
 
-use crate::state::NodeState;
+use crate::{debug_event::DebugEvent, state::NodeState};
 
 /// Maximum transactions included in a single proposed block.
 const MAX_TXS_PER_BLOCK: usize = 512;
@@ -97,6 +97,7 @@ pub async fn run_slot_ticker(state: NodeState, cancel: CancellationToken) {
 
         let time_remaining = slot_end - now;
         debug!(slot, "slot tick");
+        state.emit(DebugEvent::SlotTick { slot: slot as u64, tip_height });
 
         if let Some(proposer) = elect_proposer(slot as u64, &tip_hash, &validators) {
             if proposer.address == state.config.my_address
@@ -105,6 +106,10 @@ pub async fn run_slot_ticker(state: NodeState, cancel: CancellationToken) {
                 propose_block(&state, tip_height, tip_hash, slot as u64, now).await;
             } else {
                 debug!(slot, proposer = %proposer.address, "slot: not proposer, skipping");
+                state.emit(DebugEvent::SlotNotProposer {
+                    slot: slot as u64,
+                    elected_proposer: proposer.address.to_string(),
+                });
             }
         }
 
@@ -129,6 +134,7 @@ async fn propose_block(
         let mempool = state.mempool.lock().await;
         let mempool_size = mempool.len();
         info!(slot, mempool_size, "slot: draining mempool for block");
+        state.emit(DebugEvent::MempoolDrain { slot, mempool_size });
         mempool.drain(MAX_TXS_PER_BLOCK)
     };
 
@@ -173,4 +179,11 @@ async fn propose_block(
     // Notify all peer tasks via the broadcast channel.
     let _ = state.new_block.send(block);
     info!(height, %hash, slot, txs = tx_count, proposer = %state.config.my_address, "proposed block");
+    state.emit(DebugEvent::BlockProposed {
+        height,
+        hash:     hash.clone(),
+        slot,
+        txs:      tx_count,
+        proposer: state.config.my_address.to_string(),
+    });
 }

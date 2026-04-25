@@ -1,37 +1,33 @@
-mod api_routes;
-mod config;
 mod event_bus;
-mod log_reader;
-mod parser;
+mod node_client;
 mod scenarios;
-mod ws_handler;
+mod server;
 
 use std::net::SocketAddr;
 use std::sync::Arc;
 
 use clap::Parser;
 use tokio_util::sync::CancellationToken;
-use tracing::info;
 use tracing_subscriber::EnvFilter;
 
-use api_routes::AppState;
-use config::VisualizerConfig;
 use event_bus::EventBus;
-use log_reader::LogReader;
+use node_client::NodeClient;
 
 #[derive(Parser)]
 #[command(name = "bcc-visualizer", about = "BetterCallChain event visualizer")]
 struct Cli {
+    /// HTTP address the visualizer UI listens on.
     #[arg(long, default_value = "127.0.0.1:9090")]
     bind: SocketAddr,
 
-    #[arg(long, default_value = "bcc-node")]
-    container_prefix: String,
+    /// Explicit list of debug WebSocket URLs, one per node (comma-separated).
+    /// When provided, --node-ports is ignored.
+    /// Example: ws://172.30.0.2:9080/debug,ws://172.30.0.3:9080/debug,...
+    #[arg(long)]
+    debug_urls: Option<String>,
 
-    #[arg(long, default_value = "5")]
-    node_count: usize,
-
-    /// Comma-separated HTTP ports for the nodes (default: 8081,8082,8083,8084,8085)
+    /// Comma-separated HTTP ports of the nodes (debug WS = HTTP port + 1000).
+    /// Used when --debug-urls is not set (local mode).
     #[arg(long, default_value = "8081,8082,8083,8084,8085")]
     node_ports: String,
 }
@@ -48,45 +44,37 @@ async fn main() -> anyhow::Result<()> {
 
     let cli = Cli::parse();
 
-    let ports: Vec<u16> = cli.node_ports
+    // Build (node_name, debug_ws_url) pairs from either --debug-urls or --node-ports
+    let node_urls: Vec<(String, String)> = if let Some(raw) = cli.debug_urls {
+        raw.split(',')
+            .enumerate()
+            .map(|(i, url)| (format!("node{}", i + 1), url.trim().to_string()))
+            .collect()
+    } else {
+        cli.node_ports
+            .split(',')
+            .enumerate()
+            .filter_map(|(i, s)| s.trim().parse::<u16>().ok().map(|p| {
+                (format!("node{}", i + 1), format!("ws://127.0.0.1:{}/debug", p + 1000))
+            }))
+            .collect()
+    };
+
+    // HTTP ports for scenario execution (extract from node_ports, or derive from debug URLs)
+    let scenario_ports: Vec<u16> = cli.node_ports
         .split(',')
         .filter_map(|s| s.trim().parse().ok())
         .collect();
 
-    let cfg = VisualizerConfig {
-        bind: cli.bind,
-        container_prefix: cli.container_prefix.clone(),
-        node_count: cli.node_count,
-        node_ports: ports.clone(),
-    };
-
     let cancel = CancellationToken::new();
-    let bus = Arc::new(EventBus::new(1000));
+    let bus    = Arc::new(EventBus::new(1000));
 
-    // Start one log reader per node
-    for i in 0..cfg.node_count {
-        let container = cfg.container_name(i);
-        let node_name = cfg.node_name(i);
-        LogReader::new(&container, &node_name, Arc::clone(&bus))
+    for (node_name, debug_url) in &node_urls {
+        NodeClient::new(node_name, debug_url, Arc::clone(&bus))
             .spawn(cancel.child_token());
     }
 
-    let state = AppState {
-        bus: Arc::clone(&bus),
-        ports,
-    };
-    let app = api_routes::router(state);
-
-    info!("bcc-visualizer listening on http://{}", cfg.bind);
-    println!("Open http://{} in your browser", cfg.bind);
-
-    let listener = tokio::net::TcpListener::bind(cfg.bind).await?;
-    axum::serve(listener, app)
-        .with_graceful_shutdown(async move {
-            let _ = tokio::signal::ctrl_c().await;
-            cancel.cancel();
-        })
-        .await?;
+    server::run_server(cli.bind, Arc::clone(&bus), scenario_ports, cancel.child_token()).await;
 
     Ok(())
 }

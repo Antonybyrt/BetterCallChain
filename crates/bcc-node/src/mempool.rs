@@ -10,6 +10,16 @@ use tracing::{debug, info, warn};
 
 use crate::error::NodeError;
 
+/// Returned by [`Mempool::add`] on success, carrying the information the caller
+/// needs to emit a structured debug event.
+pub struct AddedToPool {
+    pub tx_hash:   String,
+    pub value:     u64,
+    pub pool_size: usize,
+    /// Non-empty when a lower-value tx was evicted to make room.
+    pub evicted:   Option<String>,
+}
+
 /// In-memory pool of unconfirmed transactions waiting to be included in a block.
 ///
 /// # Invariants
@@ -45,14 +55,16 @@ impl Mempool {
     ///
     /// Rejects if: the tx is invalid, any input is already in-flight (double spend),
     /// or the pool is full and the new tx has lower or equal value than the minimum pooled tx.
-    pub fn add(&mut self, tx: Transaction, utxo: &dyn UtxoStore) -> Result<(), NodeError> {
+    pub fn add(&mut self, tx: Transaction, utxo: &dyn UtxoStore) -> Result<AddedToPool, NodeError> {
         let tx_hash = tx.hash();
         let tx_hash_hex = hex::encode(tx_hash);
 
         // Already in pool — idempotent, not an error.
         if self.txs.contains_key(&tx_hash) {
             debug!(tx_hash = %tx_hash_hex, "mempool: tx already present, ignoring duplicate");
-            return Ok(());
+            let pool_size = self.txs.len();
+            let value = self.values.get(&tx_hash).copied().unwrap_or(0);
+            return Ok(AddedToPool { tx_hash: tx_hash_hex, value, pool_size, evicted: None });
         }
 
         // Validate against UTXO set.
@@ -79,6 +91,7 @@ impl Mempool {
         }
 
         let new_value: u64 = tx.outputs.iter().map(|o| o.amount).sum();
+        let mut evicted_hex: Option<String> = None;
 
         // Eviction: if at capacity, evict the lowest-value tx if the new one is worth more.
         if self.txs.len() >= self.max_size {
@@ -100,11 +113,9 @@ impl Mempool {
                 return Err(NodeError::Validation("mempool at capacity".into()));
             }
 
-            warn!(
-                evicted   = %hex::encode(min_hash),
-                new_tx    = %tx_hash_hex,
-                "mempool: evicting low-value tx to make room"
-            );
+            let evicted = hex::encode(min_hash);
+            warn!(evicted = %evicted, new_tx = %tx_hash_hex, "mempool: evicting low-value tx to make room");
+            evicted_hex = Some(evicted);
             self.remove_one(&min_hash);
         }
 
@@ -115,13 +126,9 @@ impl Mempool {
         self.values.insert(tx_hash, new_value);
         self.txs.insert(tx_hash, tx);
 
-        info!(
-            tx_hash   = %tx_hash_hex,
-            value     = new_value,
-            pool_size = self.txs.len(),
-            "mempool: tx accepted"
-        );
-        Ok(())
+        let pool_size = self.txs.len();
+        info!(tx_hash = %tx_hash_hex, value = new_value, pool_size, "mempool: tx accepted");
+        Ok(AddedToPool { tx_hash: tx_hash_hex, value: new_value, pool_size, evicted: evicted_hex })
     }
 
     /// Removes transactions by their hashes (called after block inclusion).

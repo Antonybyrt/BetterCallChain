@@ -9,10 +9,11 @@ use tracing_subscriber::{fmt::time::UtcTime, EnvFilter};
 
 use bcc_core::store::{BlockStore, UtxoStore, ValidatorStore};
 use bcc_node::config::NodeConfig;
+use bcc_node::debug_event::{DebugEnvelope, DebugEvent};
 use bcc_node::genesis::GenesisConfig;
 use bcc_node::state::NodeState;
 use bcc_node::storage::sled_store::SledStore;
-use bcc_node::{api, genesis, ibd, p2p, slot_ticker};
+use bcc_node::{api, debug_ws, genesis, ibd, p2p, slot_ticker};
 
 #[derive(Parser)]
 #[command(name = "bcc-node", about = "BetterCallChain full node")]
@@ -72,11 +73,19 @@ async fn main() -> anyhow::Result<()> {
     genesis::apply_genesis(&genesis_cfg, &*store, &*store, &*store)
         .context("failed to apply genesis")?;
 
-    // 5. Build shared node state.
+    // 5. Build shared node state + debug broadcast channel.
     let blocks:     Arc<dyn BlockStore>     = store.clone();
     let utxo:       Arc<dyn UtxoStore>      = store.clone();
     let validators: Arc<dyn ValidatorStore> = store.clone();
-    let state = NodeState::new(blocks, utxo, validators, config.clone());
+    let (debug_tx, _) = tokio::sync::broadcast::channel::<DebugEnvelope>(512);
+    let state = NodeState::new(blocks, utxo, validators, config.clone(), debug_tx.clone());
+
+    // Emit the NodeStarting event now that state is built.
+    state.emit(DebugEvent::NodeStarting {
+        node:      config.my_address.to_string(),
+        http_addr: config.http_addr.to_string(),
+        p2p_addr:  config.listen_addr.to_string(),
+    });
 
     // 6. Root cancellation token — shared by all tasks.
     let cancel = CancellationToken::new();
@@ -85,6 +94,15 @@ async fn main() -> anyhow::Result<()> {
     ibd::run_ibd(&state, &cancel).await.context("IBD failed")?;
 
     // 8. Spawn long-running tasks.
+
+    // Debug WebSocket: port = HTTP port + 1000 (e.g. 8080 → 9080).
+    let debug_addr = {
+        let mut a = config.http_addr;
+        a.set_port(config.http_addr.port() + 1000);
+        a
+    };
+    tokio::spawn(debug_ws::run_debug_ws(debug_addr, debug_tx, cancel.child_token()));
+
     let p2p_handle = tokio::spawn(p2p::server::run_server(
         state.clone(),
         cancel.child_token(),
@@ -104,11 +122,13 @@ async fn main() -> anyhow::Result<()> {
         let http_addr  = config.http_addr;
         let api_cancel = cancel.child_token();
         let api_router = api::router(state.clone());
+        let api_state  = state.clone();
         let resp = tokio::spawn(async move {
             let listener = tokio::net::TcpListener::bind(http_addr)
                 .await
                 .expect("failed to bind HTTP listener");
             info!(%http_addr, "HTTP API listening");
+            api_state.emit(DebugEvent::HttpApiReady { http_addr: http_addr.to_string() });
             axum::serve(listener, api_router)
                 .with_graceful_shutdown(async move { api_cancel.cancelled().await })
                 .await

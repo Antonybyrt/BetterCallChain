@@ -10,7 +10,7 @@ use tracing::{info, warn};
 
 use bcc_core::types::{address::Address, transaction::Transaction};
 
-use crate::{error::NodeError, state::NodeState};
+use crate::{debug_event::DebugEvent, error::NodeError, state::NodeState};
 
 /// Builds the axum router with all HTTP API routes.
 pub fn router(state: NodeState) -> Router {
@@ -78,6 +78,7 @@ async fn get_tip(State(state): State<NodeState>) -> Result<Json<TipResponse>, Ap
         Some((height, hash)) => {
             let hash_hex = hex::encode(hash);
             info!(height, hash = %hash_hex, "api: GET /chain/tip");
+            state.emit(DebugEvent::ApiGetTip { height, hash: hash_hex.clone() });
             Ok(Json(TipResponse { height, hash: hash_hex }))
         }
         None => {
@@ -130,12 +131,23 @@ async fn post_tx(
     let tx_hash = tx.hash();
     let tx_hash_hex = hex::encode(tx_hash);
     match state.mempool.lock().await.add(tx, &*state.utxo) {
-        Ok(()) => {
+        Ok(added) => {
             info!(tx_hash = %tx_hash_hex, "api: POST /tx accepted");
+            if let Some(ev) = &added.evicted {
+                state.emit(DebugEvent::TxEvicted { evicted: ev.clone(), new_tx: added.tx_hash.clone() });
+            }
+            state.emit(DebugEvent::TxAccepted {
+                tx_hash:   added.tx_hash.clone(),
+                value:     added.value,
+                pool_size: added.pool_size,
+            });
+            state.emit(DebugEvent::ApiTxAccepted { tx_hash: tx_hash_hex.clone() });
             Ok(Json(TxResponse { tx_hash: tx_hash_hex }))
         }
         Err(e) => {
             warn!(tx_hash = %tx_hash_hex, reason = %e, "api: POST /tx rejected");
+            state.emit(DebugEvent::TxRejected { tx_hash: tx_hash_hex.clone(), reason: e.to_string() });
+            state.emit(DebugEvent::ApiTxRejected { tx_hash: tx_hash_hex, reason: e.to_string() });
             Err(AppError(e))
         }
     }

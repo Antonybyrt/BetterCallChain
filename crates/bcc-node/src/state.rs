@@ -6,7 +6,12 @@ use bcc_core::{
 };
 use tokio::sync::{broadcast, Mutex, RwLock};
 
-use crate::{config::NodeConfig, mempool::Mempool, p2p::protocol::Message};
+use crate::{
+    config::NodeConfig,
+    debug_event::{DebugEnvelope, DebugEvent},
+    mempool::Mempool,
+    p2p::protocol::Message,
+};
 
 /// Central shared state of a running node.
 ///
@@ -38,21 +43,31 @@ pub struct NodeState {
     pub config: Arc<NodeConfig>,
     /// Broadcast channel notifying all peer tasks of a newly produced block.
     pub new_block: broadcast::Sender<Block>,
+    /// Broadcast channel streaming structured debug events to the visualizer.
+    pub debug_tx: broadcast::Sender<DebugEnvelope>,
+}
+
+impl NodeState {
+    /// Emits a debug event to all connected visualizer clients.  Fire-and-forget.
+    pub fn emit(&self, event: DebugEvent) {
+        let _ = self.debug_tx.send(DebugEnvelope::now(event));
+    }
 }
 
 impl NodeState {
     /// Constructs a `NodeState` from already-opened stores and config.
     pub fn new(
-        blocks: Arc<dyn BlockStore>,
-        utxo: Arc<dyn UtxoStore>,
+        blocks:     Arc<dyn BlockStore>,
+        utxo:       Arc<dyn UtxoStore>,
         validators: Arc<dyn ValidatorStore>,
-        config: Arc<NodeConfig>,
+        config:     Arc<NodeConfig>,
+        debug_tx:   broadcast::Sender<DebugEnvelope>,
     ) -> Self {
-        let mempool = Arc::new(Mutex::new(Mempool::new(config.mempool_max_size)));
-        let peers = Arc::new(RwLock::new(PeerSet::new()));
+        let mempool   = Arc::new(Mutex::new(Mempool::new(config.mempool_max_size)));
+        let peers     = Arc::new(RwLock::new(PeerSet::new()));
         let (new_block, _) = broadcast::channel(64);
 
-        Self { blocks, utxo, validators, mempool, peers, config, new_block }
+        Self { blocks, utxo, validators, mempool, peers, config, new_block, debug_tx }
     }
 }
 

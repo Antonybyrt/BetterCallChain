@@ -146,14 +146,19 @@ impl ValidatorStore for MemoryStore {
     }
 
     fn all_active(&self, slot: u64) -> StoreResult<Vec<Validator>> {
-        Ok(self
+        let mut validators: Vec<Validator> = self
             .validators
             .read()
             .unwrap()
             .values()
             .filter(|v| v.active_since <= slot && v.stake > 0)
             .cloned()
-            .collect())
+            .collect();
+        // Sort by address so every node iterates validators in the same order.
+        // elect_proposer does a weighted linear scan — the order determines who
+        // is elected, so all nodes must agree on it.
+        validators.sort_unstable_by(|a, b| a.address.as_str().cmp(b.address.as_str()));
+        Ok(validators)
     }
 
     fn upsert(&self, validator: &Validator) -> StoreResult<()> {
