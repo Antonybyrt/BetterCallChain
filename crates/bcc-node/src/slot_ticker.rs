@@ -163,7 +163,7 @@ async fn propose_block(
         proposer: state.config.my_address.clone(),
     };
 
-    let header_bytes = match bincode::serialize(&header) {
+    let header_bytes = match serde_json::to_vec(&header) {
         Ok(b) => b,
         Err(e) => {
             error!(err = %e, "slot_ticker: failed to serialize block header");

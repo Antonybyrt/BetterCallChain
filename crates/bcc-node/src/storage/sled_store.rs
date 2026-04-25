@@ -54,17 +54,17 @@ impl SledStore {
     }
 
     /// Opens a temporary in-memory sled database. Intended for tests.
-    pub fn new_temporary() -> Self {
-        let db = sled::Config::new().temporary(true).open().unwrap();
-        Self {
-            blocks_h:   db.open_tree(TREE_BLOCKS_H).unwrap(),
-            blocks_idx: db.open_tree(TREE_BLOCKS_IDX).unwrap(),
-            utxo:       db.open_tree(TREE_UTXO).unwrap(),
-            validators: db.open_tree(TREE_VALIDATORS).unwrap(),
-            meta:       db.open_tree(TREE_META).unwrap(),
-            spent_h:    db.open_tree(TREE_SPENT).unwrap(),
+    pub fn new_temporary() -> Result<Self, sled::Error> {
+        let db = sled::Config::new().temporary(true).open()?;
+        Ok(Self {
+            blocks_h:   db.open_tree(TREE_BLOCKS_H)?,
+            blocks_idx: db.open_tree(TREE_BLOCKS_IDX)?,
+            utxo:       db.open_tree(TREE_UTXO)?,
+            validators: db.open_tree(TREE_VALIDATORS)?,
+            meta:       db.open_tree(TREE_META)?,
+            spent_h:    db.open_tree(TREE_SPENT)?,
             _db:        db,
-        }
+        })
     }
 
     /// Returns `true` if the crash sentinel key is set in the meta tree.
@@ -80,11 +80,11 @@ fn height_key(height: u64) -> [u8; 8] {
 }
 
 fn encode<T: serde::Serialize>(value: &T) -> StoreResult<Vec<u8>> {
-    bincode::serialize(value).map_err(|e| StoreError::Backend(e.to_string()))
+    serde_json::to_vec(value).map_err(|e| StoreError::Backend(e.to_string()))
 }
 
 fn decode<T: serde::de::DeserializeOwned>(bytes: &[u8]) -> StoreResult<T> {
-    bincode::deserialize(bytes).map_err(|e| StoreError::Backend(e.to_string()))
+    serde_json::from_slice(bytes).map_err(|e| StoreError::Backend(e.to_string()))
 }
 
 fn spent_key(height: u64, out_ref: &TxOutRef) -> StoreResult<Vec<u8>> {
@@ -246,6 +246,18 @@ impl UtxoStore for SledStore {
                 StoreError::Backend(e.to_string())
             })?;
 
+        // Pre-compute the new tip before entering the transaction so that
+        // decode errors are surfaced as StoreError rather than causing a panic.
+        let new_tip: Option<Vec<u8>> = if block_height == 0 {
+            None
+        } else {
+            let parent_height = block_height - 1;
+            match self.get_by_height(parent_height)? {
+                Some(parent) => Some(encode(&(parent_height, parent.hash()))?),
+                None => None,
+            }
+        };
+
         // Remove block from chain.
         let height_be  = height_key(block_height);
         let block_hash = block.hash();
@@ -253,14 +265,8 @@ impl UtxoStore for SledStore {
             .transaction(|(bh, bi, meta)| {
                 bh.remove(&height_be)?;
                 bi.remove(&block_hash)?;
-                // Update tip to parent.
-                let parent_height = block_height.saturating_sub(1);
-                if let Some(parent_bytes) = bh.get(height_key(parent_height))? {
-                    let parent: Block = decode(&parent_bytes).unwrap();
-                    meta.insert(
-                        META_TIP,
-                        encode(&(parent_height, parent.hash())).unwrap(),
-                    )?;
+                if let Some(ref tip_bytes) = new_tip {
+                    meta.insert(META_TIP, tip_bytes.as_slice())?;
                 } else {
                     meta.remove(META_TIP)?;
                 }

@@ -38,6 +38,9 @@ pub enum BlockValidationError {
 
     #[error("storage error: {0}")]
     Store(#[from] StoreError),
+
+    #[error("serialization error: {0}")]
+    Serialization(String),
 }
 
 /// Validates a block against its parent and the current chain state.
@@ -92,8 +95,8 @@ pub fn validate_block(
     }
 
     // 5. Block signature must be valid against the header bytes.
-    let header_bytes =
-        bincode::serialize(&block.header).expect("BlockHeader serialization is infallible");
+    let header_bytes = serde_json::to_vec(&block.header)
+        .map_err(|e| BlockValidationError::Serialization(e.to_string()))?;
     verify(&elected.pubkey, &header_bytes, &block.signature)
         .map_err(|_| BlockValidationError::BadSignature)?;
 

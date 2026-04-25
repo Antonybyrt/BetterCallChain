@@ -5,6 +5,21 @@ Every other crate depends on this one.
 
 ---
 
+## Core Invariants
+
+| Invariant | Checked by |
+|-----------|------------|
+| `sum(inputs) ≥ sum(outputs)` | `validate_transaction` — `InsufficientFunds` if violated |
+| No double spend | UTXO set (`InputNotFound` if already spent) + mempool `in_flight` |
+| `hash(prev_block)` correct | `validate_block` step 2 — `BadParentHash` |
+| Monotonic height | `validate_block` step 1 — `BadHeight` |
+| Valid input signature | `validate_transaction` — `InvalidSignature` per input |
+| Correct UTXO owner | `validate_transaction` — `InvalidOwner` if pubkey ≠ UTXO address |
+| Consistent Merkle root | `validate_block` step 7 — `BadMerkleRoot` |
+| Timestamp within declared slot | `validate_block` step 4 — `TimestampBeyondSlot` |
+
+---
+
 ## Modules
 
 ### `crypto`
@@ -71,7 +86,7 @@ Checks in order:
 4. `sum(inputs) >= sum(outputs)`
 
 **`tx_signing_bytes(tx) -> Vec<u8>`** — public helper.
-Returns the canonical signing message: `bincode(TxSigningData { kind, input_out_refs, outputs })`.
+Returns the canonical signing message: `serde_json::to_vec(TxSigningData { kind, input_out_refs, outputs })`.
 Signatures excluded from the message to avoid circular dependency.
 Use this when building transactions.
 

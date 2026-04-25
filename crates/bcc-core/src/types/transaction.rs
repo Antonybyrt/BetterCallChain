@@ -62,7 +62,7 @@ pub struct Transaction {
 impl Transaction {
     /// Computes the unique hash identifying this transaction.
     pub fn hash(&self) -> TxHash {
-        let bytes = bincode::serialize(self).expect("Transaction serialization is infallible");
+        let bytes = serde_json::to_vec(self).expect("Transaction serialization is infallible");
         crate::crypto::hash::sha256d(&bytes)
     }
 }

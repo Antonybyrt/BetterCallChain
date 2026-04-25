@@ -1,11 +1,13 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use bcc_client::rpc::{RpcClient, UtxoItem};
+use bcc_client::rpc::RpcClient;
 use bcc_client::split::split_utxo;
 use bcc_client::wallet::{build_transfer, select_coins};
 use bcc_core::types::address::Address;
-use ed25519_dalek::SigningKey;
+use bcc_core::types::transaction::{Transaction, TxInput, TxKind, TxOutRef, TxOutput};
+use bcc_core::validation::transaction::tx_signing_bytes;
+use ed25519_dalek::{Signature, SigningKey, Signer};
 use serde::{Deserialize, Serialize};
 use tracing::info;
 
@@ -13,7 +15,6 @@ use bcc_node::debug_event::DebugEvent;
 
 use crate::event_bus::EventBus;
 
-// Test funder wallet (mirrors integration_docker.rs)
 const FUNDER_SEED: [u8; 32] = [0x42; 32];
 const FUNDER_ADDR: &str = "bcs13097e2dee2cb4a34b53840cdb705aed71067c36f";
 
@@ -27,22 +28,18 @@ pub enum ScenarioStatus {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScenarioStep {
-    pub name: String,
-    pub status: ScenarioStatus,
-    pub detail: String,
+    pub name:       String,
+    pub status:     ScenarioStatus,
+    pub detail:     String,
     pub elapsed_ms: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScenarioResult {
-    pub scenario: String,
-    pub status: ScenarioStatus,
+    pub scenario:   String,
+    pub status:     ScenarioStatus,
     pub elapsed_ms: u64,
-    pub steps: Vec<ScenarioStep>,
-}
-
-fn node_urls(urls: &[String]) -> Vec<String> {
-    urls.to_vec()
+    pub steps:      Vec<ScenarioStep>,
 }
 
 fn funder_key() -> SigningKey {
@@ -50,10 +47,8 @@ fn funder_key() -> SigningKey {
 }
 
 fn recipient_addr(tag: u8) -> Address {
-    let seed = [tag; 32];
-    let key = SigningKey::from_bytes(&seed);
-    let pubkey = key.verifying_key();
-    Address::from_pubkey_bytes(pubkey.as_bytes())
+    let key = SigningKey::from_bytes(&[tag; 32]);
+    Address::from_pubkey_bytes(key.verifying_key().as_bytes())
 }
 
 fn publish_step(bus: &Arc<EventBus>, scenario: &str, step: &str, status: &str, detail: &str) {
@@ -68,26 +63,89 @@ fn publish_step(bus: &Arc<EventBus>, scenario: &str, step: &str, status: &str, d
     );
 }
 
+fn ok_step(name: &str, detail: &str, start: Instant) -> ScenarioStep {
+    ScenarioStep {
+        name:       name.to_string(),
+        status:     ScenarioStatus::Pass,
+        detail:     detail.to_string(),
+        elapsed_ms: start.elapsed().as_millis() as u64,
+    }
+}
+
+fn fail_result(
+    scenario: &str,
+    start: Instant,
+    mut steps: Vec<ScenarioStep>,
+    reason: String,
+) -> ScenarioResult {
+    steps.push(ScenarioStep {
+        name:       "error".to_string(),
+        status:     ScenarioStatus::Fail,
+        detail:     reason,
+        elapsed_ms: start.elapsed().as_millis() as u64,
+    });
+    ScenarioResult {
+        scenario:   scenario.to_string(),
+        status:     ScenarioStatus::Fail,
+        elapsed_ms: start.elapsed().as_millis() as u64,
+        steps,
+    }
+}
+
+/// Decodes a 64-char hex string into a 32-byte array.
+fn hex_to_hash(s: &str) -> Result<[u8; 32], String> {
+    let bytes = hex::decode(s).map_err(|e| format!("hex decode: {e}"))?;
+    bytes.try_into().map_err(|_| "tx_hash must be 32 bytes".to_string())
+}
+
+/// Polls all nodes until `predicate` is satisfied or `timeout` elapses.
+/// Publishes a "progress" step every poll cycle.
+async fn wait_until<F, Fut>(
+    bus: &Arc<EventBus>,
+    scenario: &str,
+    step: &str,
+    timeout: Duration,
+    poll: Duration,
+    mut predicate: F,
+) -> bool
+where
+    F: FnMut() -> Fut,
+    Fut: std::future::Future<Output = Option<String>>,
+{
+    let deadline = Instant::now() + timeout;
+    loop {
+        if Instant::now() > deadline {
+            return false;
+        }
+        match predicate().await {
+            Some(progress) => {
+                publish_step(bus, scenario, step, "progress", &progress);
+            }
+            None => return true,
+        }
+        tokio::time::sleep(poll).await;
+    }
+}
 
 pub async fn run_scenario(name: &str, ports: &[String], bus: Arc<EventBus>) -> ScenarioResult {
     info!(scenario = name, "starting scenario");
     publish_step(&bus, name, "init", "start", "Scenario started");
 
     let result = match name {
-        "single_transfer" => scenario_single_transfer(ports, &bus).await,
-        "concurrent_sends" => scenario_concurrent_sends(ports, &bus).await,
-        "double_spend" => scenario_double_spend(ports, &bus).await,
-        "mempool_flood" => scenario_mempool_flood(ports, &bus).await,
-        "chain_consistency" => scenario_chain_consistency(ports, &bus).await,
-        "validator_rotation" => scenario_validator_rotation(ports, &bus).await,
+        "single_transfer"     => scenario_single_transfer(ports, &bus).await,
+        "concurrent_sends"    => scenario_concurrent_sends(ports, &bus).await,
+        "double_spend"        => scenario_double_spend(ports, &bus).await,
+        "mempool_flood"       => scenario_mempool_flood(ports, &bus).await,
+        "balance_conservation" => scenario_balance_conservation(ports, &bus).await,
+        "invalid_tx_rejection" => scenario_invalid_tx_rejection(ports, &bus).await,
         _ => ScenarioResult {
-            scenario: name.to_string(),
-            status: ScenarioStatus::Fail,
+            scenario:   name.to_string(),
+            status:     ScenarioStatus::Fail,
             elapsed_ms: 0,
             steps: vec![ScenarioStep {
-                name: "init".to_string(),
-                status: ScenarioStatus::Fail,
-                detail: format!("Unknown scenario: {}", name),
+                name:       "init".to_string(),
+                status:     ScenarioStatus::Fail,
+                detail:     format!("Unknown scenario: {}", name),
                 elapsed_ms: 0,
             }],
         },
@@ -98,12 +156,13 @@ pub async fn run_scenario(name: &str, ports: &[String], bus: Arc<EventBus>) -> S
     result
 }
 
+// ── single_transfer ───────────────────────────────────────────────────────────
+
 async fn scenario_single_transfer(ports: &[String], bus: &Arc<EventBus>) -> ScenarioResult {
     let name = "single_transfer";
     let start = Instant::now();
     let mut steps = Vec::new();
-
-    let urls = node_urls(ports);
+    let urls = ports.to_vec();
     let client0 = RpcClient::new(&urls[0]);
     let key = funder_key();
     let funder_addr = Address::validate(FUNDER_ADDR).unwrap();
@@ -152,65 +211,55 @@ async fn scenario_single_transfer(ports: &[String], bus: &Arc<EventBus>) -> Scen
     steps.push(ok_step("submit_tx", &format!("TX submitted: {}", &tx_hash[..8]), start));
     publish_step(bus, name, "submit_tx", "pass", &format!("tx_hash={}", &tx_hash[..16]));
 
-    // Wait for balance to appear on all nodes
-    publish_step(bus, name, "propagation", "start", "Waiting for TX to confirm on all nodes (up to 40s)");
-    let timeout = Duration::from_secs(40);
-    let poll = Duration::from_secs(3);
-    let deadline = Instant::now() + timeout;
+    publish_step(bus, name, "propagation", "start", "Waiting for TX to confirm on all nodes (40s)");
     let recipient_str = recipient.to_string();
-
-    loop {
-        if Instant::now() > deadline {
-            let msg = "TX did not propagate to all nodes within 40s".to_string();
-            publish_step(bus, name, "propagation", "fail", &msg);
-            return fail_result(name, start, steps, msg);
+    let urls_c = urls.clone();
+    let converged = wait_until(bus, name, "propagation", Duration::from_secs(40), Duration::from_secs(3), || {
+        let us = urls_c.clone();
+        let addr = recipient_str.clone();
+        async move {
+            let balances = futures::future::join_all(
+                us.iter().map(|u| { let c = RpcClient::new(u); let a = addr.clone();
+                    async move { c.get_balance(&a).await.map(|r| r.balance).unwrap_or(0) }
+                })
+            ).await;
+            let confirmed = balances.iter().filter(|&&b| b == amount).count();
+            if confirmed == us.len() { None }
+            else { Some(format!("{}/{} nodes confirmed", confirmed, us.len())) }
         }
+    }).await;
 
-        let checks: Vec<_> = urls.iter().map(|u| {
-            let c = RpcClient::new(u);
-            let addr = recipient_str.clone();
-            async move { c.get_balance(&addr).await.map(|r| r.balance).unwrap_or(0) }
-        }).collect();
-
-        let balances = futures::future::join_all(checks).await;
-        let confirmed = balances.iter().filter(|&&b| b == amount).count();
-        publish_step(bus, name, "propagation", "progress",
-            &format!("{}/{} nodes confirmed", confirmed, urls.len()));
-
-        if confirmed == urls.len() {
-            steps.push(ok_step("propagation", "All nodes confirmed balance", start));
-            publish_step(bus, name, "propagation", "pass", "All 5 nodes confirmed");
-            break;
-        }
-        tokio::time::sleep(poll).await;
+    if !converged {
+        let msg = "TX did not propagate to all nodes within 40s".to_string();
+        publish_step(bus, name, "propagation", "fail", &msg);
+        return fail_result(name, start, steps, msg);
     }
+    steps.push(ok_step("propagation", "All nodes confirmed balance", start));
+    publish_step(bus, name, "propagation", "pass", "All 5 nodes confirmed");
 
-    ScenarioResult {
-        scenario: name.to_string(),
-        status: ScenarioStatus::Pass,
-        elapsed_ms: start.elapsed().as_millis() as u64,
-        steps,
-    }
+    ScenarioResult { scenario: name.to_string(), status: ScenarioStatus::Pass,
+        elapsed_ms: start.elapsed().as_millis() as u64, steps }
 }
+
+// ── concurrent_sends ──────────────────────────────────────────────────────────
 
 async fn scenario_concurrent_sends(ports: &[String], bus: &Arc<EventBus>) -> ScenarioResult {
     let name = "concurrent_sends";
     let start = Instant::now();
     let mut steps = Vec::new();
-    let urls = node_urls(ports);
+    let urls = ports.to_vec();
     let key = funder_key();
     let funder_addr = Address::validate(FUNDER_ADDR).unwrap();
     let amounts = [11_000u64, 22_000, 33_000, 44_000, 55_000];
 
-    // Fetch the largest UTXO and split it into `amounts.len()` parts via binary doubling.
     publish_step(bus, name, "split", "start",
-        "Splitting largest funder UTXO into 5 independent parts (binary doubling)");
+        "Splitting largest funder UTXO into 5 independent parts");
     let client0 = RpcClient::new(&urls[0]);
 
     let input_utxo = {
         let mut all = match client0.get_utxos(FUNDER_ADDR).await {
             Ok(u) if !u.is_empty() => u,
-            Ok(_)  => return fail_result(name, start, steps, "funder has no UTXOs".to_string()),
+            Ok(_)  => return fail_result(name, start, steps, "funder has no UTXOs".into()),
             Err(e) => return fail_result(name, start, steps, format!("GET /utxos: {e}")),
         };
         all.sort_unstable_by(|a, b| b.amount.cmp(&a.amount));
@@ -232,7 +281,6 @@ async fn scenario_concurrent_sends(ports: &[String], bus: &Arc<EventBus>) -> Sce
         return fail_result(name, start, steps, msg);
     }
 
-    // Sort ascending and assign 1 UTXO per transaction — no chaining, no placeholders.
     utxos.sort_unstable_by_key(|u| u.amount);
     let mut txs = Vec::new();
     for (i, &amount) in amounts.iter().enumerate() {
@@ -244,7 +292,6 @@ async fn scenario_concurrent_sends(ports: &[String], bus: &Arc<EventBus>) -> Sce
         }
     }
 
-    // Submit all 5 concurrently, each to a different node.
     publish_step(bus, name, "submit", "start", "Submitting 5 TXs to 5 different nodes simultaneously");
     let submit_futures: Vec<_> = txs.iter().enumerate().map(|(i, (tx, _, _))| {
         let client = RpcClient::new(&urls[i % urls.len()]);
@@ -267,49 +314,47 @@ async fn scenario_concurrent_sends(ports: &[String], bus: &Arc<EventBus>) -> Sce
     }
     steps.push(ok_step("submit", &format!("{submitted}/{} TXs submitted", amounts.len()), start));
 
-    // Verify all recipients on all nodes in parallel.
     publish_step(bus, name, "propagation", "start", "Waiting for all TXs to confirm on all nodes (60s)");
-    let deadline = Instant::now() + Duration::from_secs(60);
-    loop {
-        if Instant::now() > deadline {
-            return fail_result(name, start, steps, "TXs did not confirm within 60s".into());
+    let txs_c = txs.clone();
+    let urls_c = urls.clone();
+    let converged = wait_until(bus, name, "propagation", Duration::from_secs(60), Duration::from_secs(3), || {
+        let us = urls_c.clone();
+        let ts = txs_c.clone();
+        async move {
+            for (_, recipient, amount) in &ts {
+                let addr = recipient.to_string();
+                let amt = *amount;
+                let balances = futures::future::join_all(
+                    us.iter().map(|u| { let c = RpcClient::new(u); let a = addr.clone();
+                        async move { c.get_balance(&a).await.map(|r| r.balance).unwrap_or(0) }
+                    })
+                ).await;
+                let confirmed = balances.iter().filter(|&&b| b == amt).count();
+                if confirmed < us.len() {
+                    return Some(format!("{addr}: {confirmed}/{} nodes", us.len()));
+                }
+            }
+            None
         }
-        let mut all_confirmed = true;
-        for (_, recipient, amount) in &txs {
-            let addr = recipient.to_string();
-            let amt = *amount;
-            let checks: Vec<_> = urls.iter().map(|u| {
-                let c = RpcClient::new(u);
-                let a = addr.clone();
-                async move { c.get_balance(&a).await.map(|r| r.balance).unwrap_or(0) }
-            }).collect();
-            let balances = futures::future::join_all(checks).await;
-            let confirmed = balances.iter().filter(|&&b| b == amt).count();
-            publish_step(bus, name, "propagation", "progress",
-                &format!("{addr}: {confirmed}/{} nodes", urls.len()));
-            if confirmed < urls.len() { all_confirmed = false; break; }
-        }
-        if all_confirmed {
-            steps.push(ok_step("propagation", "All TXs confirmed on all nodes", start));
-            publish_step(bus, name, "propagation", "pass", "All 5 recipients confirmed on all 5 nodes");
-            break;
-        }
-        tokio::time::sleep(Duration::from_secs(3)).await;
-    }
+    }).await;
 
-    ScenarioResult {
-        scenario: name.to_string(),
-        status: ScenarioStatus::Pass,
-        elapsed_ms: start.elapsed().as_millis() as u64,
-        steps,
+    if !converged {
+        return fail_result(name, start, steps, "TXs did not confirm within 60s".into());
     }
+    steps.push(ok_step("propagation", "All TXs confirmed on all nodes", start));
+    publish_step(bus, name, "propagation", "pass", "All 5 recipients confirmed on all 5 nodes");
+
+    ScenarioResult { scenario: name.to_string(), status: ScenarioStatus::Pass,
+        elapsed_ms: start.elapsed().as_millis() as u64, steps }
 }
+
+// ── double_spend ──────────────────────────────────────────────────────────────
 
 async fn scenario_double_spend(ports: &[String], bus: &Arc<EventBus>) -> ScenarioResult {
     let name = "double_spend";
     let start = Instant::now();
     let mut steps = Vec::new();
-    let urls = node_urls(ports);
+    let urls = ports.to_vec();
     let key = funder_key();
     let funder_addr = Address::validate(FUNDER_ADDR).unwrap();
     let recipient = recipient_addr(0xFF);
@@ -318,16 +363,16 @@ async fn scenario_double_spend(ports: &[String], bus: &Arc<EventBus>) -> Scenari
     publish_step(bus, name, "setup", "start", "Fetching UTXOs for double-spend test");
     let utxos = match RpcClient::new(&urls[0]).get_utxos(FUNDER_ADDR).await {
         Ok(u) if !u.is_empty() => u,
-        Ok(_) => return fail_result(name, start, steps, "no UTXOs available".into()),
+        Ok(_)  => return fail_result(name, start, steps, "no UTXOs available".into()),
         Err(e) => return fail_result(name, start, steps, format!("fetch UTXOs: {}", e)),
     };
 
-    // Build 5 identical TXs spending the same UTXO
     let sel = match select_coins(&utxos, amount) {
         Ok(s) => s,
         Err(e) => return fail_result(name, start, steps, format!("coin select: {}", e)),
     };
 
+    // Build 5 identical TXs spending the same UTXO.
     let mut identical_txs = Vec::new();
     for _ in 0..5 {
         match build_transfer(&key, sel.selected.clone(), &recipient, amount, &funder_addr) {
@@ -338,7 +383,6 @@ async fn scenario_double_spend(ports: &[String], bus: &Arc<EventBus>) -> Scenari
     steps.push(ok_step("setup", "Built 5 identical TXs (same UTXO)", start));
     publish_step(bus, name, "submit", "start", "Submitting 5 identical TXs to 5 different nodes");
 
-    // Submit all concurrently to different nodes
     let submit_futures: Vec<_> = identical_txs.iter().enumerate().map(|(i, tx)| {
         let client = RpcClient::new(&urls[i]);
         let tx = tx.clone();
@@ -346,60 +390,53 @@ async fn scenario_double_spend(ports: &[String], bus: &Arc<EventBus>) -> Scenari
     }).collect();
     let results = futures::future::join_all(submit_futures).await;
 
-    let accepted: Vec<_> = results.iter().filter(|(_, r)| r.is_ok()).collect();
+    let accepted = results.iter().filter(|(_, r)| r.is_ok()).count();
     publish_step(bus, name, "submit", "progress",
-        &format!("{}/5 nodes accepted the TX (expected: 1+)", accepted.len()));
-    steps.push(ok_step("submit", &format!("{}/5 accepted immediately", accepted.len()), start));
+        &format!("{}/5 nodes accepted the TX (expected: 1+)", accepted));
+    steps.push(ok_step("submit", &format!("{}/5 accepted immediately", accepted), start));
 
-    // Wait for exactly 1 confirmation
-    publish_step(bus, name, "verify", "start", "Verifying exactly 1 TX commits (90s timeout)");
-    let deadline = Instant::now() + Duration::from_secs(90);
+    publish_step(bus, name, "verify", "start", "Verifying exactly 1 TX commits on all nodes (90s)");
     let recipient_str = recipient.to_string();
-
-    loop {
-        if Instant::now() > deadline {
-            return fail_result(name, start, steps, "Did not converge within 90s".into());
+    let urls_c = urls.clone();
+    let converged = wait_until(bus, name, "verify", Duration::from_secs(90), Duration::from_secs(3), || {
+        let us = urls_c.clone();
+        let addr = recipient_str.clone();
+        async move {
+            let balances = futures::future::join_all(
+                us.iter().map(|u| { let c = RpcClient::new(u); let a = addr.clone();
+                    async move { c.get_balance(&a).await.map(|r| r.balance).unwrap_or(0) }
+                })
+            ).await;
+            let all_same = balances.windows(2).all(|w| w[0] == w[1]);
+            if all_same && balances[0] == amount { None }
+            else { Some(format!("all_same={all_same} balance={}", balances[0])) }
         }
-        let checks: Vec<_> = urls.iter().map(|u| {
-            let c = RpcClient::new(u);
-            let a = recipient_str.clone();
-            async move { c.get_balance(&a).await.map(|r| r.balance).unwrap_or(0) }
-        }).collect();
-        let balances = futures::future::join_all(checks).await;
-        let all_same = balances.windows(2).all(|w| w[0] == w[1]);
-        let bal = balances[0];
+    }).await;
 
-        publish_step(bus, name, "verify", "progress",
-            &format!("all_same={} recipient_balance={}", all_same, bal));
-
-        if all_same && bal == amount {
-            steps.push(ok_step("verify", "Exactly 1 TX committed, all nodes agree", start));
-            publish_step(bus, name, "verify", "pass",
-                &format!("Double-spend resolved: recipient has {} tokens", amount));
-            break;
-        }
-        tokio::time::sleep(Duration::from_secs(3)).await;
+    if !converged {
+        return fail_result(name, start, steps, "Did not converge within 90s".into());
     }
+    steps.push(ok_step("verify", "Exactly 1 TX committed, all nodes agree", start));
+    publish_step(bus, name, "verify", "pass",
+        &format!("Double-spend resolved: recipient has {} tokens", amount));
 
-    ScenarioResult {
-        scenario: name.to_string(),
-        status: ScenarioStatus::Pass,
-        elapsed_ms: start.elapsed().as_millis() as u64,
-        steps,
-    }
+    ScenarioResult { scenario: name.to_string(), status: ScenarioStatus::Pass,
+        elapsed_ms: start.elapsed().as_millis() as u64, steps }
 }
+
+// ── mempool_flood ─────────────────────────────────────────────────────────────
 
 async fn scenario_mempool_flood(ports: &[String], bus: &Arc<EventBus>) -> ScenarioResult {
     let name = "mempool_flood";
     let start = Instant::now();
     let mut steps = Vec::new();
-    let urls = node_urls(ports);
+    let urls = ports.to_vec();
     let key = funder_key();
     let funder_addr = Address::validate(FUNDER_ADDR).unwrap();
     const TX_COUNT: usize = 30;
     const AMOUNT: u64 = 1_000;
 
-    publish_step(bus, name, "setup", "start", &format!("Preparing {} TXs", TX_COUNT));
+    publish_step(bus, name, "setup", "start", &format!("Preparing up to {} TXs", TX_COUNT));
     let utxos = match RpcClient::new(&urls[0]).get_utxos(FUNDER_ADDR).await {
         Ok(u) => u,
         Err(e) => return fail_result(name, start, steps, format!("fetch UTXOs: {}", e)),
@@ -410,12 +447,10 @@ async fn scenario_mempool_flood(ports: &[String], bus: &Arc<EventBus>) -> Scenar
         Err(e) => return fail_result(name, start, steps, format!("get tip: {}", e)),
     };
 
-    // Build as many independent TXs as possible from distinct UTXOs.
-    // Each selected UTXO is tracked by (tx_hash, index) to avoid re-use.
+    // Build independent TXs from distinct UTXOs.
     let mut spent_keys = std::collections::HashSet::new();
-    let mut txs = Vec::new();
+    let mut txs: Vec<(Transaction, Address, u64)> = Vec::new();
     for i in 0..TX_COUNT {
-        // Only offer UTXOs not yet committed locally.
         let available: Vec<_> = utxos.iter()
             .filter(|u| !spent_keys.contains(&(u.tx_hash.clone(), u.index)))
             .cloned()
@@ -426,202 +461,369 @@ async fn scenario_mempool_flood(ports: &[String], bus: &Arc<EventBus>) -> Scenar
             }
             let recipient = recipient_addr(i as u8);
             if let Ok(tx) = build_transfer(&key, sel.selected, &recipient, AMOUNT, &funder_addr) {
-                txs.push(tx);
+                txs.push((tx, recipient, AMOUNT));
             }
         }
     }
     steps.push(ok_step("setup", &format!("Built {} TXs", txs.len()), start));
     publish_step(bus, name, "flood", "start", &format!("Flooding node1 with {} TXs", txs.len()));
 
-    // Submit all rapidly
     let client = RpcClient::new(&urls[0]);
-    let mut accepted = 0usize;
+    let mut accepted_txs: Vec<(Address, u64)> = Vec::new();
     let mut rejected = 0usize;
-    for tx in &txs {
+    for (tx, recipient, amount) in &txs {
         match client.post_tx(tx).await {
-            Ok(_) => accepted += 1,
+            Ok(_)  => accepted_txs.push((recipient.clone(), *amount)),
             Err(_) => rejected += 1,
         }
     }
-    steps.push(ok_step("flood", &format!("{} accepted, {} rejected", accepted, rejected), start));
+    steps.push(ok_step("flood",
+        &format!("{} accepted, {} rejected", accepted_txs.len(), rejected), start));
     publish_step(bus, name, "flood", "progress",
-        &format!("{} accepted, {} rejected by node1", accepted, rejected));
+        &format!("{} accepted, {} rejected by node1", accepted_txs.len(), rejected));
 
-    // Wait for at least 1 block to be produced (15s = 3 slots)
-    publish_step(bus, name, "wait_block", "start", "Waiting for a new block to be produced (30s)");
-    let deadline = Instant::now() + Duration::from_secs(30);
-    loop {
-        if Instant::now() > deadline {
-            return fail_result(name, start, steps, "No block produced within 30s".into());
-        }
-        if let Ok(tip) = RpcClient::new(&urls[0]).get_tip().await {
-            if tip.height > initial_tip {
-                steps.push(ok_step("wait_block", &format!("New block at height {}", tip.height), start));
-                publish_step(bus, name, "wait_block", "pass",
-                    &format!("Block {} produced, mempool drained", tip.height));
-                break;
+    // Wait for 2 new blocks to ensure the mempool is fully drained.
+    publish_step(bus, name, "wait_blocks", "start",
+        "Waiting for 2 new blocks to drain the mempool (45s)");
+    let urls_c = urls.clone();
+    let blocks_done = wait_until(bus, name, "wait_blocks", Duration::from_secs(45), Duration::from_secs(2), || {
+        let us = urls_c.clone();
+        async move {
+            if let Ok(tip) = RpcClient::new(&us[0]).get_tip().await {
+                if tip.height >= initial_tip + 2 { return None; }
+                return Some(format!("height={} (need {})", tip.height, initial_tip + 2));
             }
+            Some("waiting for tip".into())
         }
-        tokio::time::sleep(Duration::from_secs(2)).await;
-    }
+    }).await;
 
-    ScenarioResult {
-        scenario: name.to_string(),
-        status: ScenarioStatus::Pass,
-        elapsed_ms: start.elapsed().as_millis() as u64,
-        steps,
+    if !blocks_done {
+        return fail_result(name, start, steps, "2 new blocks not produced within 45s".into());
     }
+    steps.push(ok_step("wait_blocks", "2 new blocks produced", start));
+
+    // Verify accepted TXs are confirmed on ALL nodes.
+    publish_step(bus, name, "verify", "start",
+        &format!("Verifying {} accepted TXs confirmed on all nodes (30s)", accepted_txs.len()));
+    let urls_c = urls.clone();
+    let accepted_c = accepted_txs.clone();
+    let verified = wait_until(bus, name, "verify", Duration::from_secs(30), Duration::from_secs(3), || {
+        let us = urls_c.clone();
+        let txs = accepted_c.clone();
+        async move {
+            for (recipient, amount) in &txs {
+                let addr = recipient.to_string();
+                let amt = *amount;
+                let balances = futures::future::join_all(
+                    us.iter().map(|u| { let c = RpcClient::new(u); let a = addr.clone();
+                        async move { c.get_balance(&a).await.map(|r| r.balance).unwrap_or(0) }
+                    })
+                ).await;
+                let ok = balances.iter().filter(|&&b| b == amt).count();
+                if ok < us.len() {
+                    return Some(format!("{addr}: {ok}/{} nodes", us.len()));
+                }
+            }
+            None
+        }
+    }).await;
+
+    if !verified {
+        return fail_result(name, start, steps,
+            format!("Not all {} TXs confirmed on all nodes within 30s", accepted_txs.len()));
+    }
+    steps.push(ok_step("verify",
+        &format!("All {} accepted TXs confirmed on all 5 nodes", accepted_txs.len()), start));
+    publish_step(bus, name, "verify", "pass",
+        &format!("{} TXs confirmed on all nodes", accepted_txs.len()));
+
+    ScenarioResult { scenario: name.to_string(), status: ScenarioStatus::Pass,
+        elapsed_ms: start.elapsed().as_millis() as u64, steps }
 }
 
-async fn scenario_chain_consistency(ports: &[String], bus: &Arc<EventBus>) -> ScenarioResult {
-    let name = "chain_consistency";
+// ── balance_conservation ──────────────────────────────────────────────────────
+
+/// Verifies the fundamental economic invariant: no tokens are created or destroyed.
+/// After any set of transfers, funder_balance + sum(recipient_balances) must equal
+/// the funder's initial balance on every node.
+async fn scenario_balance_conservation(ports: &[String], bus: &Arc<EventBus>) -> ScenarioResult {
+    let name = "balance_conservation";
     let start = Instant::now();
     let mut steps = Vec::new();
-    let urls = node_urls(ports);
+    let urls = ports.to_vec();
     let key = funder_key();
     let funder_addr = Address::validate(FUNDER_ADDR).unwrap();
+    let amounts = [5_000u64, 7_000, 9_000, 11_000, 13_000];
+    let recipients: Vec<Address> = (0..amounts.len())
+        .map(|i| recipient_addr(0x50 + i as u8))
+        .collect();
 
-    publish_step(bus, name, "send_txs", "start", "Sending 10 concurrent TXs");
-    let utxos = match RpcClient::new(&urls[0]).get_utxos(FUNDER_ADDR).await {
-        Ok(u) => u,
-        Err(e) => return fail_result(name, start, steps, format!("fetch UTXOs: {}", e)),
+    // Snapshot the funder's balance before any transfers.
+    publish_step(bus, name, "snapshot", "start", "Reading initial funder balance on all nodes");
+    let initial_balances = futures::future::join_all(
+        urls.iter().map(|u| { let c = RpcClient::new(u);
+            async move { c.get_balance(FUNDER_ADDR).await.map(|r| r.balance) }
+        })
+    ).await;
+
+    let initial_total = match initial_balances.iter().find(|r| r.is_err()) {
+        Some(Err(e)) => return fail_result(name, start, steps, format!("get balance: {e}")),
+        _ => initial_balances[0].as_ref().copied().unwrap(),
     };
+    // All nodes must agree on the initial balance before we start.
+    let all_agree = initial_balances.iter().all(|r| r.as_ref().ok().copied() == Some(initial_total));
+    if !all_agree {
+        return fail_result(name, start, steps,
+            "Nodes disagree on initial funder balance — run after chain convergence".into());
+    }
+    steps.push(ok_step("snapshot", &format!("Initial funder balance: {initial_total}"), start));
+    publish_step(bus, name, "snapshot", "pass", &format!("All nodes agree: {initial_total} tokens"));
 
-    let mut spent_keys = std::collections::HashSet::new();
-    let mut futures_tx = Vec::new();
-    for i in 0..10usize {
-        let available: Vec<_> = utxos.iter()
-            .filter(|u| !spent_keys.contains(&(u.tx_hash.clone(), u.index)))
-            .cloned()
-            .collect();
-        if let Ok(sel) = select_coins(&available, 1_000) {
-            for u in &sel.selected {
-                spent_keys.insert((u.tx_hash.clone(), u.index));
-            }
-            let recipient = recipient_addr((0x20 + i) as u8);
-            if let Ok(tx) = build_transfer(&key, sel.selected, &recipient, 1_000, &funder_addr) {
-                let client = RpcClient::new(&urls[i % urls.len()]);
-                futures_tx.push(async move { client.post_tx(&tx).await });
-            }
+    // Split the largest funder UTXO into amounts.len() independent parts first.
+    // This guarantees one distinct UTXO per transfer, avoiding the single-UTXO bottleneck.
+    publish_step(bus, name, "split", "start",
+        &format!("Splitting funder UTXO into {} independent parts", amounts.len()));
+    let client0 = RpcClient::new(&urls[0]);
+    let input_utxo = {
+        let mut all = match client0.get_utxos(FUNDER_ADDR).await {
+            Ok(u) if !u.is_empty() => u,
+            Ok(_)  => return fail_result(name, start, steps, "funder has no UTXOs".into()),
+            Err(e) => return fail_result(name, start, steps, format!("fetch UTXOs: {e}")),
+        };
+        all.sort_unstable_by(|a, b| b.amount.cmp(&a.amount));
+        all.remove(0)
+    };
+    let mut utxos = match split_utxo(&client0, &key, &funder_addr, input_utxo, amounts.len()).await {
+        Ok(u) => u,
+        Err(e) => {
+            publish_step(bus, name, "split", "fail", &e);
+            return fail_result(name, start, steps, e);
+        }
+    };
+    if utxos.len() < amounts.len() {
+        return fail_result(name, start, steps,
+            format!("Split produced {} UTXOs, need {}", utxos.len(), amounts.len()));
+    }
+    utxos.sort_unstable_by_key(|u| u.amount);
+    steps.push(ok_step("split", &format!("{} UTXOs ready", utxos.len()), start));
+    publish_step(bus, name, "split", "pass", &format!("{} UTXOs confirmed", utxos.len()));
+
+    // Send one transfer per split UTXO.
+    publish_step(bus, name, "transfers", "start",
+        &format!("Sending {} transfers totalling {} tokens", amounts.len(), amounts.iter().sum::<u64>()));
+    let mut submitted = 0usize;
+    for (i, &amount) in amounts.iter().enumerate() {
+        let tx = match build_transfer(&key, vec![utxos[i].clone()], &recipients[i], amount, &funder_addr) {
+            Ok(t) => t,
+            Err(e) => return fail_result(name, start, steps, format!("build tx #{i}: {e}")),
+        };
+        let node = &urls[i % urls.len()];
+        match RpcClient::new(node).post_tx(&tx).await {
+            Ok(_)  => submitted += 1,
+            Err(e) => return fail_result(name, start, steps, format!("submit tx #{i}: {e}")),
         }
     }
-    let submitted = futures::future::join_all(futures_tx).await
-        .iter().filter(|r| r.is_ok()).count();
-    steps.push(ok_step("send_txs", &format!("{} TXs submitted", submitted), start));
-    publish_step(bus, name, "send_txs", "pass", &format!("{} TXs submitted", submitted));
+    steps.push(ok_step("transfers", &format!("{submitted} TXs submitted"), start));
+    publish_step(bus, name, "transfers", "pass", &format!("{submitted} transfers submitted"));
 
-    // Wait for all nodes to converge on same tip hash
-    publish_step(bus, name, "convergence", "start", "Waiting for all nodes to share same tip (60s)");
-    let deadline = Instant::now() + Duration::from_secs(60);
-    loop {
-        if Instant::now() > deadline {
-            return fail_result(name, start, steps, "Nodes did not converge within 60s".into());
+    // Wait for all transfers to confirm on all nodes.
+    publish_step(bus, name, "confirm", "start", "Waiting for all transfers to confirm (60s)");
+    let recipients_c = recipients.clone();
+    let urls_c = urls.clone();
+    let confirmed = wait_until(bus, name, "confirm", Duration::from_secs(60), Duration::from_secs(3), || {
+        let us = urls_c.clone();
+        let rs = recipients_c.clone();
+        let ams = amounts;
+        async move {
+            for (recipient, &amount) in rs.iter().zip(ams.iter()) {
+                let addr = recipient.to_string();
+                let balances = futures::future::join_all(
+                    us.iter().map(|u| { let c = RpcClient::new(u); let a = addr.clone();
+                        async move { c.get_balance(&a).await.map(|r| r.balance).unwrap_or(0) }
+                    })
+                ).await;
+                let ok = balances.iter().filter(|&&b| b == amount).count();
+                if ok < us.len() {
+                    return Some(format!("{addr}: {ok}/{} confirmed", us.len()));
+                }
+            }
+            None
         }
-        let checks: Vec<_> = urls.iter().map(|u| {
-            let c = RpcClient::new(u);
-            async move { c.get_tip().await.map(|t| (t.height, t.hash)).ok() }
-        }).collect();
-        let tips: Vec<_> = futures::future::join_all(checks).await
-            .into_iter().flatten().collect();
+    }).await;
 
-        if tips.len() == urls.len() {
-            let first_hash = &tips[0].1;
-            let all_same = tips.iter().all(|(_, h)| h == first_hash);
-            publish_step(bus, name, "convergence", "progress",
-                &format!("{}/{} nodes at same hash", tips.iter().filter(|(_, h)| h == first_hash).count(), urls.len()));
-            if all_same {
-                steps.push(ok_step("convergence", &format!("All nodes at height {} hash {}", tips[0].0, &first_hash[..8]), start));
-                publish_step(bus, name, "convergence", "pass",
-                    &format!("All 5 nodes agree: h={} hash={}", tips[0].0, &first_hash[..16]));
-                break;
+    if !confirmed {
+        return fail_result(name, start, steps, "Transfers did not confirm within 60s".into());
+    }
+    steps.push(ok_step("confirm", "All transfers confirmed on all nodes", start));
+
+    // Verify conservation on every node: funder + recipients = initial_total.
+    publish_step(bus, name, "conservation", "start",
+        "Checking funder + recipients == initial_total on all nodes");
+    let mut violations = Vec::new();
+    for (ni, url) in urls.iter().enumerate() {
+        let client = RpcClient::new(url);
+        let funder_bal = match client.get_balance(FUNDER_ADDR).await {
+            Ok(r) => r.balance,
+            Err(e) => return fail_result(name, start, steps, format!("node{ni} funder balance: {e}")),
+        };
+        let mut total = funder_bal;
+        for recipient in &recipients {
+            let addr = recipient.to_string();
+            match client.get_balance(&addr).await {
+                Ok(r)  => total += r.balance,
+                Err(e) => return fail_result(name, start, steps,
+                    format!("node{ni} recipient balance: {e}")),
             }
         }
-        tokio::time::sleep(Duration::from_secs(3)).await;
+        publish_step(bus, name, "conservation", "progress",
+            &format!("node{}: funder={} total={} expected={}", ni + 1, funder_bal, total, initial_total));
+        if total != initial_total {
+            violations.push(format!("node{}: got {total}, expected {initial_total}", ni + 1));
+        }
     }
 
-    ScenarioResult {
-        scenario: name.to_string(),
-        status: ScenarioStatus::Pass,
-        elapsed_ms: start.elapsed().as_millis() as u64,
-        steps,
+    if !violations.is_empty() {
+        return fail_result(name, start, steps,
+            format!("Conservation violated: {}", violations.join("; ")));
     }
+    steps.push(ok_step("conservation",
+        &format!("All nodes: funder + recipients = {initial_total}"), start));
+    publish_step(bus, name, "conservation", "pass",
+        &format!("Invariant holds on all 5 nodes (total = {initial_total})"));
+
+    ScenarioResult { scenario: name.to_string(), status: ScenarioStatus::Pass,
+        elapsed_ms: start.elapsed().as_millis() as u64, steps }
 }
 
-async fn scenario_validator_rotation(ports: &[String], bus: &Arc<EventBus>) -> ScenarioResult {
-    let name = "validator_rotation";
+// ── invalid_tx_rejection ──────────────────────────────────────────────────────
+
+/// Verifies that every node rejects malformed transactions before they enter the mempool.
+/// Tests three cases: invalid signature, sum(outputs) > sum(inputs), non-existent UTXO.
+async fn scenario_invalid_tx_rejection(ports: &[String], bus: &Arc<EventBus>) -> ScenarioResult {
+    let name = "invalid_tx_rejection";
     let start = Instant::now();
     let mut steps = Vec::new();
-    let urls = node_urls(ports);
-    const OBSERVE_SECS: u64 = 75; // 15 slots at 5s/slot
+    let urls = ports.to_vec();
+    let key = funder_key();
 
-    publish_step(bus, name, "observe", "start",
-        &format!("Observing block proposers for {}s (15 slots)", OBSERVE_SECS));
-
-    // Record tip before
-    let tip_before = match RpcClient::new(&urls[0]).get_tip().await {
-        Ok(t) => t.height,
-        Err(e) => return fail_result(name, start, steps, format!("get tip: {}", e)),
+    // Fetch a real UTXO to use as a valid reference in our malformed TXs.
+    publish_step(bus, name, "setup", "start", "Fetching a real UTXO as base for invalid TXs");
+    let utxos = match RpcClient::new(&urls[0]).get_utxos(FUNDER_ADDR).await {
+        Ok(u) if !u.is_empty() => u,
+        Ok(_)  => return fail_result(name, start, steps, "funder has no UTXOs".into()),
+        Err(e) => return fail_result(name, start, steps, format!("fetch UTXOs: {e}")),
     };
+    let utxo = &utxos[0];
+    let out_ref = match hex_to_hash(&utxo.tx_hash) {
+        Ok(h)  => TxOutRef { tx_hash: h, index: utxo.index },
+        Err(e) => return fail_result(name, start, steps, e),
+    };
+    steps.push(ok_step("setup", &format!("Using UTXO {} (amount={})", &utxo.tx_hash[..8], utxo.amount), start));
+    publish_step(bus, name, "setup", "pass", "UTXO ready");
 
-    // Wait for observation window
-    let mut elapsed = 0u64;
-    loop {
-        tokio::time::sleep(Duration::from_secs(5)).await;
-        elapsed += 5;
-        if let Ok(tip) = RpcClient::new(&urls[0]).get_tip().await {
-            publish_step(bus, name, "observe", "progress",
-                &format!("t={}s current_height={}", elapsed, tip.height));
+    // Helper: submit tx to all nodes and assert all reject it (non-2xx).
+    let assert_all_reject = |tx: Transaction, case: &'static str| {
+        let us = urls.clone();
+        async move {
+            let results = futures::future::join_all(
+                us.iter().map(|u| { let c = RpcClient::new(u); let t = tx.clone();
+                    async move { c.post_tx(&t).await }
+                })
+            ).await;
+            let accepted: Vec<_> = results.iter().filter(|r| r.is_ok()).collect();
+            if accepted.is_empty() {
+                Ok(format!("All {} nodes rejected", us.len()))
+            } else {
+                Err(format!("{case}: {}/{} nodes accepted (expected 0)", accepted.len(), us.len()))
+            }
         }
-        if elapsed >= OBSERVE_SECS { break; }
-    }
-
-    let tip_after = match RpcClient::new(&urls[0]).get_tip().await {
-        Ok(t) => t.height,
-        Err(e) => return fail_result(name, start, steps, format!("get tip after: {}", e)),
     };
 
-    let blocks_produced = tip_after.saturating_sub(tip_before);
-    steps.push(ok_step("observe", &format!("{} blocks in {}s", blocks_produced, OBSERVE_SECS), start));
-
-    // We verify liveness: at least 3 blocks should have been produced in 15 slots
-    if blocks_produced < 3 {
-        return fail_result(name, start, steps,
-            format!("Only {} blocks produced in 75s — expected ≥3", blocks_produced));
+    // Case 1 — Invalid signature: valid structure, signature bytes zeroed.
+    publish_step(bus, name, "bad_signature", "start",
+        "Submitting TX with all-zero signature to all nodes");
+    let bad_sig_tx = Transaction {
+        kind:    TxKind::Transfer,
+        inputs:  vec![TxInput {
+            out_ref:   out_ref.clone(),
+            signature: Signature::from_bytes(&[0u8; 64]),
+            pubkey:    key.verifying_key(),
+        }],
+        outputs: vec![TxOutput {
+            amount:  utxo.amount / 2,
+            address: recipient_addr(0xB1),
+        }],
+    };
+    match assert_all_reject(bad_sig_tx, "bad_signature").await {
+        Ok(detail) => {
+            steps.push(ok_step("bad_signature", &detail, start));
+            publish_step(bus, name, "bad_signature", "pass", &detail);
+        }
+        Err(e) => {
+            publish_step(bus, name, "bad_signature", "fail", &e);
+            return fail_result(name, start, steps, e);
+        }
     }
 
-    publish_step(bus, name, "verify", "pass",
-        &format!("{} blocks produced in {}s — liveness confirmed", blocks_produced, OBSERVE_SECS));
-    steps.push(ok_step("verify",
-        &format!("{} blocks produced — PoS liveness confirmed", blocks_produced), start));
-
-    ScenarioResult {
-        scenario: name.to_string(),
-        status: ScenarioStatus::Pass,
-        elapsed_ms: start.elapsed().as_millis() as u64,
-        steps,
+    // Case 2 — Overspend: sum(outputs) > sum(inputs), but correctly signed.
+    publish_step(bus, name, "overspend", "start",
+        "Submitting TX where output exceeds input amount (correctly signed)");
+    let overspend_amount = utxo.amount + 1;
+    // Build with placeholder signature first (needed to compute the signing message).
+    let mut overspend_tx = Transaction {
+        kind:    TxKind::Transfer,
+        inputs:  vec![TxInput {
+            out_ref:   out_ref.clone(),
+            signature: Signature::from_bytes(&[0u8; 64]),
+            pubkey:    key.verifying_key(),
+        }],
+        outputs: vec![TxOutput {
+            amount:  overspend_amount,
+            address: recipient_addr(0xB2),
+        }],
+    };
+    let msg = tx_signing_bytes(&overspend_tx);
+    overspend_tx.inputs[0].signature = key.sign(&msg);
+    match assert_all_reject(overspend_tx, "overspend").await {
+        Ok(detail) => {
+            steps.push(ok_step("overspend", &detail, start));
+            publish_step(bus, name, "overspend", "pass", &detail);
+        }
+        Err(e) => {
+            publish_step(bus, name, "overspend", "fail", &e);
+            return fail_result(name, start, steps, e);
+        }
     }
-}
 
-fn ok_step(name: &str, detail: &str, start: Instant) -> ScenarioStep {
-    ScenarioStep {
-        name: name.to_string(),
-        status: ScenarioStatus::Pass,
-        detail: detail.to_string(),
-        elapsed_ms: start.elapsed().as_millis() as u64,
+    // Case 3 — Non-existent UTXO: correctly signed TX spending a phantom UTXO.
+    publish_step(bus, name, "phantom_utxo", "start",
+        "Submitting TX spending a UTXO that does not exist");
+    let phantom_ref = TxOutRef { tx_hash: [0xDE; 32], index: 0 };
+    let mut phantom_tx = Transaction {
+        kind:    TxKind::Transfer,
+        inputs:  vec![TxInput {
+            out_ref:   phantom_ref,
+            signature: Signature::from_bytes(&[0u8; 64]),
+            pubkey:    key.verifying_key(),
+        }],
+        outputs: vec![TxOutput {
+            amount:  1_000,
+            address: recipient_addr(0xB3),
+        }],
+    };
+    let msg = tx_signing_bytes(&phantom_tx);
+    phantom_tx.inputs[0].signature = key.sign(&msg);
+    match assert_all_reject(phantom_tx, "phantom_utxo").await {
+        Ok(detail) => {
+            steps.push(ok_step("phantom_utxo", &detail, start));
+            publish_step(bus, name, "phantom_utxo", "pass", &detail);
+        }
+        Err(e) => {
+            publish_step(bus, name, "phantom_utxo", "fail", &e);
+            return fail_result(name, start, steps, e);
+        }
     }
-}
 
-fn fail_result(scenario: &str, start: Instant, mut steps: Vec<ScenarioStep>, reason: String) -> ScenarioResult {
-    steps.push(ScenarioStep {
-        name: "error".to_string(),
-        status: ScenarioStatus::Fail,
-        detail: reason,
-        elapsed_ms: start.elapsed().as_millis() as u64,
-    });
-    ScenarioResult {
-        scenario: scenario.to_string(),
-        status: ScenarioStatus::Fail,
-        elapsed_ms: start.elapsed().as_millis() as u64,
-        steps,
-    }
+    ScenarioResult { scenario: name.to_string(), status: ScenarioStatus::Pass,
+        elapsed_ms: start.elapsed().as_millis() as u64, steps }
 }

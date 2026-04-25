@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::sync::RwLock;
 
 use crate::crypto::hash::BlockHash;
-use crate::store::{BlockStore, StoreResult, UtxoStore, ValidatorStore};
+use crate::store::{BlockStore, StoreError, StoreResult, UtxoStore, ValidatorStore};
 use crate::types::address::Address;
 use crate::types::block::Block;
 use crate::types::transaction::{TxOutRef, TxOutput};
@@ -39,22 +39,26 @@ impl Default for MemoryStore {
     }
 }
 
+fn lock_err<T>(e: std::sync::PoisonError<T>) -> StoreError {
+    StoreError::Backend(e.to_string())
+}
+
 impl BlockStore for MemoryStore {
     fn get_by_height(&self, height: u64) -> StoreResult<Option<Block>> {
-        Ok(self.blocks.read().unwrap().get(&height).cloned())
+        Ok(self.blocks.read().map_err(lock_err)?.get(&height).cloned())
     }
 
     fn get_by_hash(&self, hash: &BlockHash) -> StoreResult<Option<Block>> {
-        let index = self.index.read().unwrap();
-        let blocks = self.blocks.read().unwrap();
+        let index  = self.index.read().map_err(lock_err)?;
+        let blocks = self.blocks.read().map_err(lock_err)?;
         Ok(index.get(hash).and_then(|h| blocks.get(h)).cloned())
     }
 
     fn insert(&self, block: &Block) -> StoreResult<()> {
-        let hash = block.hash();
+        let hash   = block.hash();
         let height = block.header.height;
-        self.blocks.write().unwrap().insert(height, block.clone());
-        self.index.write().unwrap().insert(hash, height);
+        self.blocks.write().map_err(lock_err)?.insert(height, block.clone());
+        self.index.write().map_err(lock_err)?.insert(hash, height);
         Ok(())
     }
 
@@ -62,7 +66,7 @@ impl BlockStore for MemoryStore {
         Ok(self
             .blocks
             .read()
-            .unwrap()
+            .map_err(lock_err)?
             .iter()
             .next_back()
             .map(|(h, b)| (*h, b.hash())))
@@ -72,7 +76,7 @@ impl BlockStore for MemoryStore {
         Ok(self
             .blocks
             .read()
-            .unwrap()
+            .map_err(lock_err)?
             .range(height..)
             .map(|(_, b)| b.clone())
             .collect())
@@ -81,14 +85,14 @@ impl BlockStore for MemoryStore {
 
 impl UtxoStore for MemoryStore {
     fn get(&self, out_ref: &TxOutRef) -> StoreResult<Option<TxOutput>> {
-        Ok(self.utxo.read().unwrap().get(out_ref).cloned())
+        Ok(self.utxo.read().map_err(lock_err)?.get(out_ref).cloned())
     }
 
     /// Removes inputs spent by the block and inserts newly created outputs.
     /// Captures spent outputs so rollback_block can restore them.
     fn apply_block(&self, block: &Block) -> StoreResult<()> {
-        let mut utxo  = self.utxo.write().unwrap();
-        let mut spent = self.spent.write().unwrap();
+        let mut utxo  = self.utxo.write().map_err(lock_err)?;
+        let mut spent = self.spent.write().map_err(lock_err)?;
         let mut block_spent: Vec<(TxOutRef, TxOutput)> = Vec::new();
         for tx in &block.txs {
             let tx_hash = tx.hash();
@@ -110,8 +114,8 @@ impl UtxoStore for MemoryStore {
 
     /// Re-inserts inputs removed by the block and deletes outputs it created.
     fn rollback_block(&self, block: &Block) -> StoreResult<()> {
-        let mut utxo  = self.utxo.write().unwrap();
-        let mut spent = self.spent.write().unwrap();
+        let mut utxo  = self.utxo.write().map_err(lock_err)?;
+        let mut spent = self.spent.write().map_err(lock_err)?;
         for tx in block.txs.iter().rev() {
             let tx_hash = tx.hash();
             for index in 0..tx.outputs.len() {
@@ -130,7 +134,7 @@ impl UtxoStore for MemoryStore {
         let total = self
             .utxo
             .read()
-            .unwrap()
+            .map_err(lock_err)?
             .values()
             .filter(|o| &o.address == address)
             .map(|o| o.amount)
@@ -139,10 +143,7 @@ impl UtxoStore for MemoryStore {
     }
 
     fn list_utxos(&self, address: &Address) -> StoreResult<Vec<(TxOutRef, TxOutput)>> {
-        let guard = self
-            .utxo
-            .read()
-            .map_err(|e| crate::store::StoreError::Backend(e.to_string()))?;
+        let guard = self.utxo.read().map_err(lock_err)?;
         Ok(guard
             .iter()
             .filter(|(_, output)| &output.address == address)
@@ -153,14 +154,14 @@ impl UtxoStore for MemoryStore {
 
 impl ValidatorStore for MemoryStore {
     fn get(&self, address: &Address) -> StoreResult<Option<Validator>> {
-        Ok(self.validators.read().unwrap().get(address).cloned())
+        Ok(self.validators.read().map_err(lock_err)?.get(address).cloned())
     }
 
     fn all_active(&self, slot: u64) -> StoreResult<Vec<Validator>> {
         let mut validators: Vec<Validator> = self
             .validators
             .read()
-            .unwrap()
+            .map_err(lock_err)?
             .values()
             .filter(|v| v.active_since <= slot && v.stake > 0)
             .cloned()
@@ -184,7 +185,7 @@ impl ValidatorStore for MemoryStore {
         }
         self.validators
             .write()
-            .unwrap()
+            .map_err(lock_err)?
             .insert(validator.address.clone(), validator.clone());
         Ok(())
     }

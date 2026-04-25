@@ -50,7 +50,7 @@ pub fn tx_signing_bytes(tx: &Transaction) -> Vec<u8> {
         inputs:  tx.inputs.iter().map(|i| &i.out_ref).collect(),
         outputs: &tx.outputs,
     };
-    bincode::serialize(&data).expect("TxSigningData serialization is infallible")
+    serde_json::to_vec(&data).expect("TxSigningData serialization is infallible")
 }
 
 /// Validates a transaction against the current UTXO set.
@@ -70,15 +70,7 @@ pub fn validate_transaction(
         }
     }
 
-    // Build the message that every input signature must cover.
-    // Using only the non-signature fields so the message is deterministic.
-    let signing_data = TxSigningData {
-        kind:    &tx.kind,
-        inputs:  tx.inputs.iter().map(|i| &i.out_ref).collect(),
-        outputs: &tx.outputs,
-    };
-    let msg = bincode::serialize(&signing_data)
-        .expect("TxSigningData serialization is infallible");
+    let msg = tx_signing_bytes(tx);
 
     let mut total_in: u64 = 0;
     for (idx, input) in tx.inputs.iter().enumerate() {

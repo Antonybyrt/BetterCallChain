@@ -62,7 +62,7 @@ pub fn select_coins(utxos: &[UtxoItem], target: u64) -> Result<CoinSelection, Cl
 ///
 /// Each `TxInput` is signed independently over:
 /// ```text
-/// bincode::serialize( (&kind, &outputs, &out_ref, input_amount) )
+/// serde_json::to_vec( (&kind, &outputs, &out_ref, input_amount) )
 /// ```
 /// This tuple binds the signature to:
 /// 1. `kind` — prevents replaying a `Transfer` signature in a `Stake` transaction.

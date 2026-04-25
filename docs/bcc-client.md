@@ -175,7 +175,7 @@ preventing partial writes from corrupting an existing keystore.
 
 ## Signing scheme
 
-Each `TxInput` is signed over `bincode(TxSigningData)`:
+Each `TxInput` is signed over `serde_json::to_vec(TxSigningData)`:
 
 ```
 TxSigningData {

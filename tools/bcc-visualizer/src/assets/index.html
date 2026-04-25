@@ -262,11 +262,11 @@ dialog::backdrop { background:rgba(0,0,0,.7); }
       <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px">Click to run</div>
       <button class="sc-btn" data-sc="single_transfer">
         <span class="sc-name">Single Transfer</span>
-        <span class="sc-desc">Send 100k tokens, verify on all 5 nodes (&lt;40s)</span>
+        <span class="sc-desc">Send 100k tokens, verify balance on all 5 nodes (&lt;40s)</span>
       </button>
       <button class="sc-btn" data-sc="concurrent_sends">
         <span class="sc-name">Concurrent Sends</span>
-        <span class="sc-desc">5 simultaneous TXs to 5 different recipients</span>
+        <span class="sc-desc">5 simultaneous TXs to 5 nodes — verify all recipients</span>
       </button>
       <button class="sc-btn" data-sc="double_spend">
         <span class="sc-name">Double Spend Attack</span>
@@ -274,15 +274,15 @@ dialog::backdrop { background:rgba(0,0,0,.7); }
       </button>
       <button class="sc-btn" data-sc="mempool_flood">
         <span class="sc-name">Mempool Flood</span>
-        <span class="sc-desc">30 rapid TXs — observe evictions &amp; drain</span>
+        <span class="sc-desc">30 rapid TXs — 2 blocks drain, verify all confirmed</span>
       </button>
-      <button class="sc-btn" data-sc="chain_consistency">
-        <span class="sc-name">Chain Consistency</span>
-        <span class="sc-desc">10 concurrent TXs — all nodes must converge</span>
+      <button class="sc-btn" data-sc="balance_conservation">
+        <span class="sc-name">Balance Conservation</span>
+        <span class="sc-desc">funder + recipients = initial total on every node</span>
       </button>
-      <button class="sc-btn" data-sc="validator_rotation">
-        <span class="sc-name">Validator Rotation (~75s)</span>
-        <span class="sc-desc">Observe 15 slots — ≥3 blocks produced (PoS liveness)</span>
+      <button class="sc-btn" data-sc="invalid_tx_rejection">
+        <span class="sc-name">Invalid TX Rejection</span>
+        <span class="sc-desc">Bad sig · overspend · phantom UTXO — all 5 nodes reject</span>
       </button>
     </div>
     <div id="sc-feed">

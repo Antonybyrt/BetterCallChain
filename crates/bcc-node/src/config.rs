@@ -106,11 +106,8 @@ impl NodeConfig {
             .map_err(|_| NodeError::Config("my_signing_key must be 32 bytes".into()))?;
         let my_signing_key = SigningKey::from_bytes(&key_array);
 
-        // Zero raw key bytes immediately — SigningKey owns its material from here.
-        // Use write_volatile to prevent the compiler from eliding the zeroing.
-        for byte in key_array.iter_mut() {
-            unsafe { std::ptr::write_volatile(byte, 0u8) };
-        }
+        // Zero raw key bytes — SigningKey holds the material from here on.
+        key_array.fill(0);
 
         // Verify the signing key actually corresponds to the declared address.
         // Prevents silent misconfiguration where address and key are mismatched.
