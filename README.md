@@ -4,14 +4,39 @@ A minimalist blockchain written in Rust using **Proof of Stake** consensus.
 
 ## Getting Started
 
+### 1. Generate node configs
+
 ```bash
 git clone <repo>
 cd BetterCallChain
-
-# Generate node configs + genesis.toml for the 5-node test network
 ./scripts/gen-test-configs.sh
+```
 
-# Start the network
+This creates `config/node{1..5}.toml` and `config/genesis.toml` with fresh validator keypairs.
+The test funder wallet (seed `[0x42;32]`) is always included automatically.
+
+### 2. (Optional) Fund your own wallet at genesis
+
+If you want your wallet to have tokens from block 0, add your address to `config/genesis.toml` **before** starting the network:
+
+```toml
+[[accounts]]
+address = "bcs1<your address here>"
+balance = 1000000000000
+```
+
+Retrieve your address with:
+
+```bash
+bcc-client wallet new   # create a wallet if you don't have one yet
+bcc-client wallet show  # print the address
+```
+
+> This step must be done **before** `docker compose up`. If you forgot, restart with `docker compose down -v && docker compose up --build` after editing the file.
+
+### 3. Start the network
+
+```bash
 docker compose up --build
 ```
 
@@ -20,12 +45,6 @@ The visualizer is available at **http://localhost:9090** once the cluster is up.
 ## Sending tokens
 
 ```bash
-# Create a wallet (saves an encrypted keystore to ~/.bcc/keystore.json)
-bcc-client wallet new
-
-# Check your address
-bcc-client wallet show
-
 # Send tokens to an address
 bcc-client --rpc-url http://localhost:8081 send <recipient_address> <amount>
 ```

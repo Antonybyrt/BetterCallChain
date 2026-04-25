@@ -9,7 +9,7 @@
 /// 3. Transaction & reconciliation tests
 ///
 /// ## Funder wallet (Phase 3)
-/// Seed `[0x42; 32]` → address `bcs13097e2dee2cb4a34b53840cdb705aed71067c36f`
+/// Seed `[0x42; 32]` — address derived at runtime via `funder_addr()`.
 /// Genesis balance: 1_000_000_000_000 (see config/genesis.toml).
 /// No encrypted keystore is needed — the raw seed is embedded here.
 use bcc_client::{rpc::RpcClient, wallet};
@@ -33,26 +33,24 @@ const NODE_PORTS: [u16; 5] = [8081, 8082, 8083, 8084, 8085];
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(90);
 const POLL_INTERVAL:   Duration = Duration::from_secs(2);
 
-/// Validator address seeded in genesis (node1 signing key).
-const GENESIS_ADDRESS: &str = "bcs1b523d93ee39930528b034952aa1b5b52710f11f8";
-
 const LOAD_CONCURRENCY: usize = 50;
 const LOAD_TOTAL:       usize = 200;
 
 // ── Test-funder wallet ────────────────────────────────────────────────────────
 //
-// Deterministic wallet used exclusively by Phase 3 integration tests.
+// Deterministic wallet used exclusively by integration tests.
 // Its genesis allocation is defined in config/genesis.toml.
+// The address is always derived from the seed — never hardcoded.
 //
 // Derivation:
-//   seed    = [0x42; 32]
-//   pubkey  = 2152f8d19b791d24453242e15f2eab6cb7cffa7b6a5ed30097960e069881db12
-//   address = bcs13097e2dee2cb4a34b53840cdb705aed71067c36f
+//   seed   = [0x42; 32]
+//   pubkey = 2152f8d19b791d24453242e15f2eab6cb7cffa7b6a5ed30097960e069881db12
 
 const TEST_FUNDER_SEED: [u8; 32] = [0x42; 32];
-const TEST_FUNDER_ADDR: &str    = "bcs13097e2dee2cb4a34b53840cdb705aed71067c36f";
 
 fn funder_key() -> SigningKey { SigningKey::from_bytes(&TEST_FUNDER_SEED) }
+
+fn funder_addr() -> String { key_to_address(&funder_key()).to_string() }
 
 /// Returns a deterministic ephemeral key for recipient wallet `tag`.
 /// Each distinct `tag` byte gives a different wallet.
@@ -232,15 +230,16 @@ async fn test_tip_round_robin() {
     println!("[test] tip_round_robin: PASS");
 }
 
-/// All nodes must agree on the genesis validator's balance.
+/// All nodes must agree on the funder's genesis balance.
 async fn test_balance_round_robin() {
     println!("[test] balance_round_robin …");
+    let addr = funder_addr();
     let mut first: Option<u64> = None;
     for i in 0..NODE_PORTS.len() {
-        let resp = client_for(i).get_balance(GENESIS_ADDRESS).await
+        let resp = client_for(i).get_balance(&addr).await
             .unwrap_or_else(|e| panic!("node{} /balance failed: {e}", i + 1));
         println!("  node{} → balance={}", i + 1, resp.balance);
-        assert_eq!(resp.address, GENESIS_ADDRESS, "node{} wrong address", i + 1);
+        assert_eq!(resp.address, addr, "node{} wrong address", i + 1);
         match first {
             None      => first = Some(resp.balance),
             Some(exp) => assert_eq!(resp.balance, exp, "node{} disagrees on balance", i + 1),
@@ -286,7 +285,7 @@ async fn load_test_get_balance() {
     println!("[load] get_balance: {LOAD_TOTAL} req …");
     let errors = run_load(LOAD_TOTAL, LOAD_CONCURRENCY, |i| async move {
         let node_idx = i % NODE_PORTS.len();
-        client_for(node_idx).get_balance(GENESIS_ADDRESS).await.map(|_| ()).map_err(|e| (node_idx, e))
+        client_for(node_idx).get_balance(&funder_addr()).await.map(|_| ()).map_err(|e| (node_idx, e))
     }).await;
     assert_eq!(errors, 0, "get_balance load: {errors} errors");
     println!("[load] get_balance: PASS");
@@ -294,15 +293,19 @@ async fn load_test_get_balance() {
 
 async fn load_test_mixed_requests() {
     println!("[load] mixed: {LOAD_TOTAL} req …");
-    let errors = run_load(LOAD_TOTAL, LOAD_CONCURRENCY, |i| async move {
-        let node_idx = i % NODE_PORTS.len();
-        let c = client_for(node_idx);
-        let r = if i % 2 == 0 {
-            c.get_tip().await.map(|_| ())
-        } else {
-            c.get_balance(GENESIS_ADDRESS).await.map(|_| ())
-        };
-        r.map_err(|e| (node_idx, e))
+    let addr = funder_addr();
+    let errors = run_load(LOAD_TOTAL, LOAD_CONCURRENCY, move |i| {
+        let addr = addr.clone();
+        async move {
+            let node_idx = i % NODE_PORTS.len();
+            let c = client_for(node_idx);
+            let r = if i % 2 == 0 {
+                c.get_tip().await.map(|_| ())
+            } else {
+                c.get_balance(&addr).await.map(|_| ())
+            };
+            r.map_err(|e| (node_idx, e))
+        }
     }).await;
     assert_eq!(errors, 0, "mixed load: {errors} errors");
     println!("[load] mixed: PASS");
@@ -317,7 +320,7 @@ async fn load_test_mixed_requests() {
 /// Sanity: the funder must have its genesis allocation.
 async fn test_funder_has_funds() {
     println!("[tx] funder_has_funds …");
-    let resp = client_for(0).get_balance(TEST_FUNDER_ADDR).await
+    let resp = client_for(0).get_balance(&funder_addr()).await
         .expect("GET /balance failed for funder");
     println!("  funder balance = {}", resp.balance);
     assert!(resp.balance > 0,
@@ -565,7 +568,7 @@ async fn test_mempool_flood() {
     let client = client_for(0);
 
     let tip_before = client.get_tip().await.expect("get tip before flood").height;
-    let utxos = client.get_utxos(TEST_FUNDER_ADDR).await.expect("get utxos");
+    let utxos = client.get_utxos(&funder_addr()).await.expect("get utxos");
 
     let mut remaining = utxos;
     let mut submitted = 0usize;
@@ -611,7 +614,7 @@ async fn test_chain_consistency_after_load() {
     let key = funder_key();
     let funder_addr = Address::from_pubkey_bytes(key.verifying_key().as_bytes());
 
-    let utxos = client_for(0).get_utxos(TEST_FUNDER_ADDR).await.expect("get utxos");
+    let utxos = client_for(0).get_utxos(&funder_addr()).await.expect("get utxos");
     let mut remaining = utxos;
     let mut handles = Vec::new();
 
