@@ -57,7 +57,7 @@ Full UTXO transfer flow:
 4. Build a `TxKind::Transfer` transaction:
    - Output 0: `amount` → `<to>`
    - Output 1 (if change > 0): `total_selected - amount` → sender address
-5. Sign each input over `bincode(kind, outputs, out_ref, input_amount)`
+5. Sign each input over `TxSigningData` (see Signing scheme below)
 6. Submit via `POST /tx` — prints the resulting `tx_hash`
 
 ---
@@ -123,6 +123,30 @@ For generating all 5 test-network configs at once, see [`scripts/gen-test-config
 
 ---
 
+## Library modules
+
+### `wallet`
+
+`select_coins(utxos, target)` — first-fit ascending coin selection.
+
+`build_transfer(key, utxos, recipient, amount, change_addr)` — builds and signs a `Transfer` transaction. Outputs are finalised before any input is signed. Uses `tx_signing_bytes` internally.
+
+### `split`
+
+`split_utxo(client, key, addr, input_utxo, n)` — splits a single UTXO into `n` independent confirmed UTXOs using **binary doubling**:
+
+```
+Round 1 :  1 UTXO  → 1  tx  (parallel) → wait block →  2 UTXOs
+Round 2 :  2 UTXOs → 2  txs (parallel) → wait block →  4 UTXOs
+Round 3 :  4 UTXOs → N  txs (parallel) → wait block →  n UTXOs
+```
+
+Each split divides a UTXO's value in two equal halves; both outputs go to `addr`. Confirmation is detected by polling `get_utxos` until the expected tx hashes appear. Returns `Err(String)` on timeout or network error.
+
+Used by integration tests and visualizer scenarios before concurrent sends.
+
+---
+
 ## Keystore format
 
 The keystore is a JSON file on disk. The signing key is **never stored in plaintext**.
@@ -151,20 +175,26 @@ preventing partial writes from corrupting an existing keystore.
 
 ## Signing scheme
 
-Each `TxInput` is signed over:
+Each `TxInput` is signed over `serde_json::to_vec(TxSigningData)`:
 
 ```
-bincode::serialize( (&kind, &outputs, &out_ref, input_amount) )
+TxSigningData {
+    kind:    TxKind,
+    inputs:  Vec<TxOutRef>,   // out_refs only — no signatures
+    outputs: Vec<TxOutput>,
+}
 ```
 
 | Field | Protection |
 |-------|------------|
 | `kind` | Prevents replaying a Transfer signature as a Stake |
+| `inputs` (out_refs) | Binds the signature to the exact set of UTXOs being spent |
 | `outputs` | Prevents output substitution after signing |
-| `out_ref` | Prevents copying a signature across inputs of the same key |
-| `input_amount` | Prevents a malicious node substituting a larger UTXO of the same address |
 
 All outputs (including change) are finalised **before** any input is signed.
+Every input in a transaction signs the **same message** — covering all outputs and all input references at once.
+
+Use `bcc_core::validation::transaction::tx_signing_bytes(tx)` to compute this message.
 
 ---
 

@@ -12,191 +12,231 @@
   --green:#22c55e; --blue:#3b82f6; --orange:#f97316;
   --red:#ef4444; --yellow:#eab308; --purple:#a855f7;
 }
-body { font-family:'Segoe UI',system-ui,sans-serif; background:var(--bg); color:var(--text); height:100vh; display:flex; flex-direction:column; overflow:hidden; }
+body { font-family:'Segoe UI',system-ui,sans-serif; background:var(--bg); color:var(--text);
+       height:100vh; display:flex; flex-direction:column; overflow:hidden; }
 
-/* Status bar */
-#status-bar { display:flex; align-items:center; gap:12px; padding:5px 14px; background:var(--surface); border-bottom:1px solid var(--border); font-size:11px; color:var(--muted); flex-shrink:0; flex-wrap:wrap; }
-#conn-dot { width:7px; height:7px; border-radius:50%; background:var(--red); display:inline-block; margin-right:3px; }
+/* ── Status bar ─────────────────────────────────────────────────────────── */
+#status-bar { display:flex; align-items:center; gap:12px; padding:5px 14px;
+  background:var(--surface); border-bottom:1px solid var(--border);
+  font-size:11px; color:var(--muted); flex-shrink:0; flex-wrap:wrap; }
+#conn-dot { width:7px; height:7px; border-radius:50%; background:var(--red);
+  display:inline-block; margin-right:3px; }
 #conn-dot.ok { background:var(--green); }
-.nbadge { background:var(--border); padding:1px 5px; border-radius:3px; font-size:10px; font-family:monospace; }
+.nbadge { background:var(--border); padding:1px 5px; border-radius:3px;
+  font-size:10px; font-family:monospace; }
 .nbadge b { color:var(--green); }
 
-/* Tabs */
+/* ── Tab bar ────────────────────────────────────────────────────────────── */
 #tab-bar { display:flex; background:var(--surface); border-bottom:1px solid var(--border); flex-shrink:0; }
-.tab-btn { padding:9px 18px; background:none; border:none; border-bottom:2px solid transparent; color:var(--muted); cursor:pointer; font-size:13px; font-weight:500; transition:all .15s; }
+.tab-btn { padding:9px 18px; background:none; border:none; border-bottom:2px solid transparent;
+  color:var(--muted); cursor:pointer; font-size:13px; font-weight:500; transition:all .15s; }
 .tab-btn:hover { color:var(--text); }
 .tab-btn.active { color:var(--accent); border-bottom-color:var(--accent); }
 
-/* Description bar under tabs */
-.tab-desc { padding:6px 14px; background:#12151f; border-bottom:1px solid var(--border); font-size:11px; color:var(--muted); flex-shrink:0; line-height:1.6; }
+/* ── Tab descriptions ───────────────────────────────────────────────────── */
+.tab-desc { padding:6px 14px; background:#12151f; border-bottom:1px solid var(--border);
+  font-size:11px; color:var(--muted); flex-shrink:0; line-height:1.6; }
 .tab-desc strong { color:#94a3b8; }
-.legend-dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin:0 3px 0 8px; vertical-align:middle; }
+.legend-dot { display:inline-block; width:8px; height:8px; border-radius:50%;
+  margin:0 3px 0 8px; vertical-align:middle; }
 
-/* Tab panels */
+/* ── Tab panels ─────────────────────────────────────────────────────────── */
 .tab-panel { display:none; flex:1; overflow:hidden; flex-direction:column; }
 .tab-panel.active { display:flex; }
 
-/* Common cards */
+/* ── Common ─────────────────────────────────────────────────────────────── */
 .card { background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:10px 14px; }
-.card-title { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); margin-bottom:8px; }
+.card-title { font-size:10px; font-weight:700; text-transform:uppercase;
+  letter-spacing:.08em; color:var(--muted); margin-bottom:8px; }
 
-/* ── Tab 1: Flow (Canvas) ──────────────────────────────────────────── */
-#flow-controls { display:flex; gap:10px; align-items:center; padding:6px 14px; background:var(--surface); border-bottom:1px solid var(--border); flex-shrink:0; font-size:12px; flex-wrap:wrap; }
+/* ── Tab 1: Event Flow ───────────────────────────────────────────────────── */
+#flow-controls { display:flex; gap:10px; align-items:center; padding:6px 14px;
+  background:var(--surface); border-bottom:1px solid var(--border);
+  flex-shrink:0; font-size:12px; flex-wrap:wrap; }
 #flow-controls label { color:var(--muted); white-space:nowrap; }
 #flow-controls input[type=range] { width:80px; accent-color:var(--accent); }
-#follow-btn { padding:3px 10px; background:var(--accent); color:#fff; border:none; border-radius:4px; cursor:pointer; font-size:11px; }
+#follow-btn { padding:3px 10px; background:var(--accent); color:#fff; border:none;
+  border-radius:4px; cursor:pointer; font-size:11px; }
 #follow-btn.off { background:var(--border); color:var(--muted); }
 #flow-count { color:var(--muted); font-size:11px; margin-left:auto; }
 #canvas-wrap { flex:1; overflow:hidden; position:relative; }
 #swimlane { display:block; width:100%; height:100%; cursor:crosshair; }
 
-/* ── Tab 2: Blocks ────────────────────────────────────────────────── */
-#blocks-wrap { flex:1; overflow-y:auto; }
-table { width:100%; border-collapse:collapse; font-size:12px; }
-th { text-align:left; padding:5px 9px; color:var(--muted); border-bottom:1px solid var(--border); font-size:10px; text-transform:uppercase; letter-spacing:.06em; position:sticky; top:0; background:var(--bg); z-index:1; }
-td { padding:6px 9px; border-bottom:1px solid var(--border); }
-tr:hover td { background:rgba(255,255,255,.025); }
-.ni { display:inline-flex; width:17px; height:17px; border-radius:50%; margin:0 1px; font-size:9px; align-items:center; justify-content:center; font-weight:700; }
-.ni.p { background:var(--accent); color:#fff; }
-.ni.y { background:var(--green); color:#000; }
-.ni.n { background:var(--border); color:var(--muted); }
+/* ── Tab 2: Chain & Mempool ──────────────────────────────────────────────── */
+#chain-panel { display:flex; flex-direction:column; flex:1; overflow:hidden; gap:0; }
 
-/* ── Tab 3: Mempool ───────────────────────────────────────────────── */
-#mp-grid { display:grid; grid-template-columns:repeat(5,1fr); gap:10px; padding:0 0 10px; flex-shrink:0; }
-.mp-card { text-align:center; }
-.mp-bar-wrap { height:100px; display:flex; align-items:flex-end; justify-content:center; margin:8px auto; width:44px; }
-.mp-bar { width:100%; background:var(--accent); border-radius:3px 3px 0 0; min-height:2px; transition:height .3s ease; }
-.mp-label { font-size:10px; font-weight:700; color:var(--muted); margin-bottom:4px; }
-.mp-size { font-size:14px; font-weight:700; color:var(--text); }
-.mp-stats { font-size:10px; color:var(--muted); margin-top:4px; line-height:1.8; }
-.mp-stats .ok { color:var(--green); } .mp-stats .bad { color:var(--red); }
-#mp-events { flex:1; overflow-y:auto; }
-#mp-list { list-style:none; font-size:11px; }
-#mp-list li { padding:4px 0; border-bottom:1px solid var(--border); display:flex; gap:6px; align-items:baseline; }
+/* Chain graph area */
+#chain-section { flex:0 0 55%; display:flex; flex-direction:column; overflow:hidden;
+  border-bottom:2px solid var(--border); }
+#chain-controls { display:flex; gap:10px; align-items:center; padding:6px 14px;
+  background:var(--surface); border-bottom:1px solid var(--border);
+  font-size:12px; flex-shrink:0; flex-wrap:wrap; }
+#chain-controls label { color:var(--muted); }
+#chain-follow { padding:3px 10px; background:var(--accent); color:#fff; border:none;
+  border-radius:4px; cursor:pointer; font-size:11px; }
+#chain-follow.off { background:var(--border); color:var(--muted); }
+#chain-scroll { flex:1; overflow-x:auto; overflow-y:auto; background:var(--bg); }
+#chain-canvas { display:block; }
 
-/* ── Tab 4: Network ───────────────────────────────────────────────── */
+/* Mempool area */
+#mempool-section { flex:1; display:flex; overflow:hidden; }
+#mp-left { flex:0 0 55%; padding:10px 14px; display:flex; flex-direction:column;
+  overflow:hidden; border-right:1px solid var(--border); }
+#mp-bars { display:flex; gap:10px; align-items:flex-end; flex:1; min-height:0; padding-bottom:8px; }
+.mp-node { display:flex; flex-direction:column; align-items:center; gap:4px; flex:1; }
+.mp-node-label { font-size:10px; font-weight:700; color:var(--muted); }
+.mp-bar-wrap { flex:1; width:100%; display:flex; align-items:flex-end;
+  justify-content:center; max-height:90px; }
+.mp-bar { width:100%; min-height:2px; border-radius:3px 3px 0 0; transition:height .3s; }
+.mp-node-stats { font-size:10px; color:var(--muted); text-align:center; line-height:1.7; }
+.mp-node-stats .good { color:var(--green); }
+.mp-node-stats .bad  { color:var(--red); }
+.mp-pool-size { font-size:15px; font-weight:700; }
+
+#mp-right { flex:1; padding:10px 14px; display:flex; flex-direction:column; overflow:hidden; }
+#tx-log { flex:1; overflow-y:auto; }
+#tx-log-list { list-style:none; font-size:11px; }
+#tx-log-list li { padding:4px 0; border-bottom:1px solid var(--border);
+  display:flex; gap:6px; align-items:baseline; flex-wrap:wrap; }
+.tx-pill { display:inline-block; padding:1px 6px; border-radius:10px; font-size:10px; font-family:monospace; }
+.tx-pill.accept { background:#14532d; color:var(--green); }
+.tx-pill.reject { background:#450a0a; color:var(--red); }
+.tx-pill.evict  { background:#431407; color:var(--orange); }
+.tx-pill.gossip { background:#1e3a5f; color:var(--blue); }
+.tx-value { color:var(--yellow); font-size:10px; }
+.tx-pool  { color:var(--muted); font-size:10px; }
+
+/* ── Tab 3: P2P Network ──────────────────────────────────────────────────── */
 #net-wrap { display:flex; gap:12px; flex:1; overflow:hidden; padding:2px 0; }
 #svg-wrap { flex-shrink:0; }
 #peer-svg { display:block; }
 #net-right { flex:1; display:flex; flex-direction:column; gap:10px; overflow:hidden; }
 .net-section { overflow-y:auto; }
-.peer-row { display:flex; justify-content:space-between; padding:5px 0; border-bottom:1px solid var(--border); font-size:11px; }
+.peer-row { display:flex; justify-content:space-between; padding:5px 0;
+  border-bottom:1px solid var(--border); font-size:11px; }
 .peer-count { color:var(--green); font-weight:600; }
 #gossip-list { list-style:none; font-size:10px; color:var(--muted); }
 #gossip-list li { padding:2px 0; border-bottom:1px solid var(--border); }
 
-/* ── Tab 5: Scenarios ─────────────────────────────────────────────── */
+/* ── Tab 4: Scenarios ────────────────────────────────────────────────────── */
 #sc-wrap { display:flex; gap:12px; flex:1; overflow:hidden; }
-#sc-btns { flex-shrink:0; display:flex; flex-direction:column; gap:6px; width:200px; }
-.sc-btn { padding:10px 12px; background:var(--surface); border:1px solid var(--border); border-radius:6px; color:var(--text); cursor:pointer; font-size:12px; text-align:left; line-height:1.4; }
+#sc-btns { flex-shrink:0; display:flex; flex-direction:column; gap:6px; width:205px; }
+.sc-btn { padding:10px 12px; background:var(--surface); border:1px solid var(--border);
+  border-radius:6px; color:var(--text); cursor:pointer; font-size:12px; text-align:left; line-height:1.4; }
 .sc-btn:hover { border-color:var(--accent); }
 .sc-btn .sc-name { font-weight:600; display:block; }
 .sc-btn .sc-desc { font-size:10px; color:var(--muted); display:block; margin-top:2px; }
-.sc-btn.running { border-color:var(--yellow); }
-.sc-btn.pass    { border-color:var(--green); }
-.sc-btn.fail    { border-color:var(--red); }
-.sc-btn.running .sc-name { color:var(--yellow); }
-.sc-btn.pass    .sc-name { color:var(--green); }
-.sc-btn.fail    .sc-name { color:var(--red); }
-#sc-feed { flex:1; background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:10px; overflow-y:auto; font-size:11px; font-family:monospace; }
+.sc-btn.running .sc-name { color:var(--yellow); } .sc-btn.running { border-color:var(--yellow); }
+.sc-btn.pass    .sc-name { color:var(--green);  } .sc-btn.pass    { border-color:var(--green); }
+.sc-btn.fail    .sc-name { color:var(--red);    } .sc-btn.fail    { border-color:var(--red); }
+#sc-feed { flex:1; background:var(--surface); border:1px solid var(--border);
+  border-radius:6px; padding:10px; overflow-y:auto; font-size:11px; font-family:monospace; }
 #sc-list { list-style:none; }
 #sc-list li { padding:2px 0; display:flex; gap:6px; border-bottom:1px solid var(--border); }
-.s-run { color:var(--yellow); } .s-pass { color:var(--green); } .s-fail { color:var(--red); }
-.s-prog { color:var(--blue); } .s-start { color:var(--muted); }
+.s-run{color:var(--yellow)}.s-pass{color:var(--green)}.s-fail{color:var(--red)}
+.s-prog{color:var(--blue)}.s-start{color:var(--muted)}
 
-/* Dialog */
-dialog { background:var(--surface); border:1px solid var(--border); border-radius:8px; color:var(--text); padding:18px; max-width:460px; width:90vw; }
+/* ── Dialog ──────────────────────────────────────────────────────────────── */
+dialog { background:var(--surface); border:1px solid var(--border); border-radius:8px;
+  color:var(--text); padding:18px; max-width:480px; width:90vw; }
 dialog::backdrop { background:rgba(0,0,0,.7); }
 .dlg-title { font-weight:600; margin-bottom:10px; }
 .dlg-row { display:flex; gap:8px; margin:3px 0; font-size:12px; }
-.dlg-key { color:var(--muted); min-width:80px; flex-shrink:0; }
-.dlg-val { word-break:break-all; }
-.dlg-close { margin-top:14px; padding:5px 14px; background:var(--accent); color:#fff; border:none; border-radius:4px; cursor:pointer; }
+.dlg-key { color:var(--muted); min-width:90px; flex-shrink:0; }
+.dlg-val { word-break:break-all; font-family:monospace; }
+.dlg-close { margin-top:14px; padding:5px 14px; background:var(--accent);
+  color:#fff; border:none; border-radius:4px; cursor:pointer; }
 </style>
 </head>
 <body>
 
+<!-- Status bar -->
 <div id="status-bar">
-  <span><span id="conn-dot"></span><span id="conn-txt">Connexion…</span></span>
-  <span id="ev-count">0 événements</span>
+  <span><span id="conn-dot"></span><span id="conn-txt">Connecting…</span></span>
+  <span id="ev-count">0 events</span>
   <span id="node-hts"></span>
 </div>
 
+<!-- Tab bar -->
 <div id="tab-bar">
   <button class="tab-btn active" data-tab="flow">① Event Flow</button>
-  <button class="tab-btn" data-tab="blocks">② Propagation Blocs</button>
-  <button class="tab-btn" data-tab="mempool">③ Mempool</button>
-  <button class="tab-btn" data-tab="network">④ Réseau P2P</button>
-  <button class="tab-btn" data-tab="scenarios">⑤ Scénarios de test</button>
+  <button class="tab-btn" data-tab="chain">② Chain &amp; Mempool</button>
+  <button class="tab-btn" data-tab="network">③ P2P Network</button>
+  <button class="tab-btn" data-tab="scenarios">④ Test Scenarios</button>
 </div>
 
-<!-- ── Descriptions (changent avec l'onglet) ──────────────────────── -->
+<!-- Descriptions -->
 <div class="tab-desc" id="desc-flow">
-  <strong>Event Flow</strong> — Timeline en temps réel. Chaque nœud est divisé en <strong>4 sous-lignes</strong> par type :
-  <span class="legend-dot" style="background:#22c55e"></span><strong>bloc</strong> (BlockProposed / BlockFromPeer)
-  <span class="legend-dot" style="background:#3b82f6"></span><strong>tx</strong> (mempool accept/reject, gossip)
-  <span class="legend-dot" style="background:#7c3aed"></span><strong>slot</strong> (ticker / proposeur élu)
-  <span class="legend-dot" style="background:#f97316"></span><strong>pair</strong> (connexions P2P, IBD)
-  · Les ticks SlotTick sont des barres verticales grises. Cliquer sur un point = détails.
+  <strong>Event Flow</strong> — Real-time Canvas timeline. Each node row is split into 4 sub-lanes:
+  <span class="legend-dot" style="background:#22c55e"></span><strong>block</strong>
+  <span class="legend-dot" style="background:#3b82f6"></span><strong>tx</strong>
+  <span class="legend-dot" style="background:#7c3aed"></span><strong>slot</strong>
+  <span class="legend-dot" style="background:#f97316"></span><strong>peer</strong>
+  · Click any dot for full event details.
 </div>
-<div class="tab-desc" id="desc-blocks" style="display:none">
-  <strong>Propagation des blocs</strong> — Suivi de chaque bloc produit sur le réseau.
-  <strong>[P]</strong> = nœud proposeur · <strong>[✓]</strong> = bloc reçu · <strong>[?]</strong> = en attente
-  · <em>Spread</em> = délai entre le proposeur et le dernier nœud à recevoir le bloc.
-</div>
-<div class="tab-desc" id="desc-mempool" style="display:none">
-  <strong>Mempool</strong> — Pool de transactions non confirmées de chaque nœud.
-  La barre indique la taille relative du pool (max 10 000 TXs configuré).
-  <strong>+N</strong> = acceptées · <strong>–N</strong> = rejetées · <strong>évict N</strong> = évictions (pool plein, TX de moindre valeur).
+<div class="tab-desc" id="desc-chain" style="display:none">
+  <strong>Chain &amp; Mempool</strong> — Block graph (top): each card = one block; colored dots = propagation across the 5 nodes; orphaned blocks (reorg) are dimmed in red.
+  <strong>Mempool</strong> (bottom): live pool size per node + TX event log (accepts · rejects · gossip · evictions).
 </div>
 <div class="tab-desc" id="desc-network" style="display:none">
-  <strong>Réseau P2P</strong> — Graphe des 5 validateurs.
-  Les arêtes = connexions TCP actives maintenues par le connecteur P2P.
-  Pulsation <span style="color:var(--green)">●</span> = propagation de bloc · <span style="color:var(--blue)">●</span> = gossip TX.
-  Hauteur affichée sous chaque nœud = dernier bloc connu.
+  <strong>P2P Network</strong> — Active TCP connections between validators. Pulses = live gossip (green = block, blue = TX). Height shown below each node.
 </div>
 <div class="tab-desc" id="desc-scenarios" style="display:none">
-  <strong>Scénarios de test</strong> — Déclenche un test depuis l'UI et observe les événements en direct.
-  Chaque scénario publie des étapes dans le flux d'événements (onglet ①).
-  Le résultat PASS/FAIL est déterminé par les assertions du code Rust côté serveur.
+  <strong>Test Scenarios</strong> — Trigger a test from the UI and watch events live. Steps are also visible in tab ①.
 </div>
 
-<!-- ── Panels ─────────────────────────────────────────────────────── -->
+<!-- ── Panel 1: Event Flow ─────────────────────────────────────────────── -->
 <div class="tab-panel active" id="panel-flow">
   <div id="flow-controls">
-    <label>Fenêtre : <input type="range" id="w-range" min="15" max="300" value="60"> <span id="w-val">60s</span></label>
-    <label>px/s : <input type="range" id="p-range" min="5" max="80" value="15"> <span id="p-val">15</span></label>
-    <button id="follow-btn">⟶ Suivre</button>
+    <label>Window: <input type="range" id="w-range" min="15" max="300" value="60">
+      <span id="w-val">60s</span></label>
+    <label>px/s: <input type="range" id="p-range" min="5" max="80" value="15">
+      <span id="p-val">15</span></label>
+    <button id="follow-btn">⟶ Follow</button>
     <span id="flow-count"></span>
   </div>
-  <div id="canvas-wrap">
-    <canvas id="swimlane"></canvas>
+  <div id="canvas-wrap"><canvas id="swimlane"></canvas></div>
+</div>
+
+<!-- ── Panel 2: Chain & Mempool ───────────────────────────────────────── -->
+<div class="tab-panel" id="panel-chain">
+  <div id="chain-panel">
+
+    <!-- Block chain graph -->
+    <div id="chain-section">
+      <div id="chain-controls">
+        <span style="color:var(--muted);font-size:11px" id="chain-stats">0 blocks</span>
+        <button id="chain-follow">⟶ Follow</button>
+        <label style="color:var(--muted)">
+          <input type="checkbox" id="chain-show-orphans" checked> Show orphans
+        </label>
+        <span style="margin-left:auto;font-size:10px;color:var(--muted)">
+          <span class="legend-dot" style="background:#6366f1"></span>n1
+          <span class="legend-dot" style="background:#22c55e"></span>n2
+          <span class="legend-dot" style="background:#3b82f6"></span>n3
+          <span class="legend-dot" style="background:#f97316"></span>n4
+          <span class="legend-dot" style="background:#a855f7"></span>n5
+          &nbsp;· filled dot = block received
+        </span>
+      </div>
+      <div id="chain-scroll"><canvas id="chain-canvas"></canvas></div>
+    </div>
+
+    <!-- Mempool -->
+    <div id="mempool-section">
+      <div id="mp-left">
+        <div class="card-title">Mempool — pool size per node</div>
+        <div id="mp-bars"><!-- filled by JS --></div>
+      </div>
+      <div id="mp-right">
+        <div class="card-title">Transaction events</div>
+        <div id="tx-log"><ul id="tx-log-list"></ul></div>
+      </div>
+    </div>
   </div>
 </div>
 
-<div class="tab-panel" id="panel-blocks">
-  <div id="blocks-wrap">
-    <table>
-      <thead><tr>
-        <th>Hauteur</th><th>Hash</th><th>Proposeur</th><th>TXs</th>
-        <th>node1</th><th>node2</th><th>node3</th><th>node4</th><th>node5</th>
-        <th>Spread</th>
-      </tr></thead>
-      <tbody id="blocks-body"></tbody>
-    </table>
-  </div>
-</div>
-
-<div class="tab-panel" id="panel-mempool">
-  <div class="card" style="margin:10px;flex-shrink:0;padding:8px 14px;">
-    <div id="mp-grid"></div>
-  </div>
-  <div id="mp-events" class="card" style="margin:0 10px 10px;flex:1;">
-    <div class="card-title">Derniers événements mempool</div>
-    <ul id="mp-list"></ul>
-  </div>
-</div>
-
+<!-- ── Panel 3: P2P Network ───────────────────────────────────────────── -->
 <div class="tab-panel" id="panel-network">
   <div id="net-wrap" style="padding:10px;">
     <div id="svg-wrap" class="card" style="padding:8px;">
@@ -204,522 +244,669 @@ dialog::backdrop { background:rgba(0,0,0,.7); }
     </div>
     <div id="net-right">
       <div class="card net-section">
-        <div class="card-title">Connexions actives</div>
+        <div class="card-title">Active connections</div>
         <div id="peer-rows"></div>
       </div>
       <div class="card net-section" style="flex:1;min-height:0;">
-        <div class="card-title">Gossip récent</div>
+        <div class="card-title">Recent gossip</div>
         <ul id="gossip-list"></ul>
       </div>
     </div>
   </div>
 </div>
 
+<!-- ── Panel 4: Test Scenarios ────────────────────────────────────────── -->
 <div class="tab-panel" id="panel-scenarios">
   <div id="sc-wrap" style="padding:10px;">
     <div id="sc-btns">
-      <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px;">Cliquer pour lancer</div>
+      <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px">Click to run</div>
       <button class="sc-btn" data-sc="single_transfer">
         <span class="sc-name">Single Transfer</span>
-        <span class="sc-desc">Envoie 100k tokens, vérifie sur 5 nœuds en &lt;40s</span>
+        <span class="sc-desc">Send 100k tokens, verify balance on all 5 nodes (&lt;40s)</span>
       </button>
       <button class="sc-btn" data-sc="concurrent_sends">
         <span class="sc-name">Concurrent Sends</span>
-        <span class="sc-desc">5 TXs simultanées vers 5 destinataires différents</span>
+        <span class="sc-desc">5 simultaneous TXs to 5 nodes — verify all recipients</span>
       </button>
       <button class="sc-btn" data-sc="double_spend">
         <span class="sc-name">Double Spend Attack</span>
-        <span class="sc-desc">5 TXs identiques (même UTXO) → exactement 1 doit passer</span>
+        <span class="sc-desc">5 identical TXs (same UTXO) — exactly 1 must commit</span>
       </button>
       <button class="sc-btn" data-sc="mempool_flood">
         <span class="sc-name">Mempool Flood</span>
-        <span class="sc-desc">30 TXs rapides → observe les évictions et le drain</span>
+        <span class="sc-desc">30 rapid TXs — 2 blocks drain, verify all confirmed</span>
       </button>
-      <button class="sc-btn" data-sc="chain_consistency">
-        <span class="sc-name">Chain Consistency</span>
-        <span class="sc-desc">Après 10 TXs concurrentes, tous les nœuds doivent converger</span>
+      <button class="sc-btn" data-sc="balance_conservation">
+        <span class="sc-name">Balance Conservation</span>
+        <span class="sc-desc">funder + recipients = initial total on every node</span>
       </button>
-      <button class="sc-btn" data-sc="validator_rotation">
-        <span class="sc-name">Validator Rotation</span>
-        <span class="sc-desc">75s d'observation → ≥3 blocs produits (vivacité PoS)</span>
+      <button class="sc-btn" data-sc="invalid_tx_rejection">
+        <span class="sc-name">Invalid TX Rejection</span>
+        <span class="sc-desc">Bad sig · overspend · phantom UTXO — all 5 nodes reject</span>
       </button>
     </div>
     <div id="sc-feed">
-      <div style="color:var(--muted);font-size:11px;margin-bottom:8px;">
-        Les étapes s'affichent ici en temps réel pendant l'exécution.
-        Les événements apparaissent aussi dans l'onglet ① Event Flow.
+      <div style="color:var(--muted);font-size:11px;margin-bottom:8px">
+        Steps appear here in real time. Events also stream to tab ①.
       </div>
       <ul id="sc-list"></ul>
     </div>
   </div>
 </div>
 
+<!-- Event detail dialog -->
 <dialog id="ev-dialog">
-  <div class="dlg-title" id="dlg-title">Détails de l'événement</div>
+  <div class="dlg-title" id="dlg-title">Event Details</div>
   <div id="dlg-fields"></div>
-  <button class="dlg-close" onclick="document.getElementById('ev-dialog').close()">Fermer</button>
+  <button class="dlg-close" onclick="document.getElementById('ev-dialog').close()">Close</button>
 </dialog>
 
 <script>
 'use strict';
-// ── Constants ────────────────────────────────────────────────────────
-const NODES = ['node1','node2','node3','node4','node5'];
-const LABEL_W = 52;
-
-// Sub-lane layout inside each node band
-// 4 sub-lanes, each 13px tall, 1px gap between them, 14px node label on top, 4px separator at bottom
-const SUBLANE_H    = 13;  // height of one sub-lane row
-const SUBLANE_GAP  = 1;   // vertical gap between sub-lanes
-const NODE_LABEL_H = 14;  // top strip showing the node name
-const NODE_SEP     = 4;   // separator between node bands
-const NUM_SUBLANES = 4;
-const NODE_H = NODE_LABEL_H + NUM_SUBLANES*SUBLANE_H + (NUM_SUBLANES-1)*SUBLANE_GAP + NODE_SEP;
-
-// Sub-lane definitions — order matters (index 0 = top row in each band)
-const SUBLANES = [
-  { name:'bloc',  label:'●bloc',  col:'#22c55e',
-    kinds:new Set(['BlockProposed','BlockFromPeer','BlockIgnored']) },
-  { name:'tx',    label:'●tx',    col:'#3b82f6',
-    kinds:new Set(['TxAccepted','ApiTxAccepted','TxGossipAccepted','TxRejected','TxEvicted','MempoolDrain','ApiTxRejected']) },
-  { name:'slot',  label:'●slot',  col:'#7c3aed',
-    kinds:new Set(['SlotTick','SlotNotProposer']) },
-  { name:'pair',  label:'●pair',  col:'#f97316',
-    kinds:new Set(['PeerConnected','PeerDisconnected','NodeStarting','IbdComplete','IbdStarting','IbdBatch','P2pListening','ScenarioEvent','Raw']) },
-];
-
-function getSublane(kind) {
-  for (let i=0; i<SUBLANES.length; i++) if (SUBLANES[i].kinds.has(kind)) return i;
-  return SUBLANES.length-1;
-}
-const MAX_EVENTS = 2000;
-const MAX_BLOCKS = 60;
-const MAX_MP_LOG = 40;
-const MAX_GOSSIP = 20;
-const RENDER_THROTTLE_MS = 80;  // max ~12fps per tab
-const MAX_POOL = 10000;
-
-// Node pentagon positions in 340x340 SVG
-const NODE_POS = {
-  node1: {x:170,y:28},  node2: {x:316,y:138},
-  node3: {x:260,y:308}, node4: {x:80,y:308},  node5: {x:24,y:138}
-};
+// ── Constants ─────────────────────────────────────────────────────────────────
+const NODES       = ['node1','node2','node3','node4','node5'];
 const NODE_COLORS = ['#6366f1','#22c55e','#3b82f6','#f97316','#a855f7'];
+const NODE_POS    = { node1:{x:170,y:28}, node2:{x:316,y:138}, node3:{x:260,y:308}, node4:{x:80,y:308}, node5:{x:24,y:138} };
 
-const EVENT_COLOR = {
-  BlockProposed:'#22c55e', BlockFromPeer:'#4ade80',
-  TxAccepted:'#3b82f6', ApiTxAccepted:'#60a5fa', TxGossipAccepted:'#93c5fd',
-  PeerConnected:'#f97316', PeerDisconnected:'#fb923c',
-  SlotTick:'#1e293b', SlotNotProposer:'#334155', MempoolDrain:'#7c3aed',
-  TxRejected:'#ef4444', TxEvicted:'#f97316',
-  BlockIgnored:'#475569', IbdComplete:'#a855f7',
-  ScenarioEvent:'#eab308', NodeStarting:'#94a3b8',
+// Swimlane sub-lanes
+const SUBLANE_H=13, SUBLANE_GAP=1, NODE_LABEL_H=14, NODE_SEP=4, NUM_SUBLANES=4;
+const NODE_H = NODE_LABEL_H + NUM_SUBLANES*SUBLANE_H + (NUM_SUBLANES-1)*SUBLANE_GAP + NODE_SEP;
+const LABEL_W=52;
+const SUBLANES=[
+  {name:'block', col:'#22c55e', kinds:new Set(['BlockProposed','BlockFromPeer','BlockIgnored','BlockReorged','BlockRejected'])},
+  {name:'tx',    col:'#3b82f6', kinds:new Set(['TxAccepted','ApiTxAccepted','TxGossipAccepted','TxRejected','TxEvicted','MempoolDrain','ApiTxRejected'])},
+  {name:'slot',  col:'#7c3aed', kinds:new Set(['SlotTick','SlotNotProposer'])},
+  {name:'peer',  col:'#f97316', kinds:new Set(['PeerConnected','PeerDisconnected','NodeStarting','IbdComplete','IbdStarting','IbdBatch','ScenarioEvent','Raw'])},
+];
+function getSublane(kind) { for(let i=0;i<SUBLANES.length;i++) if(SUBLANES[i].kinds.has(kind)) return i; return SUBLANES.length-1; }
+
+const EVENT_COLOR={
+  BlockProposed:'#22c55e',BlockFromPeer:'#4ade80',BlockReorged:'#ef4444',BlockRejected:'#f87171',BlockIgnored:'#475569',
+  TxAccepted:'#3b82f6',ApiTxAccepted:'#60a5fa',TxGossipAccepted:'#93c5fd',TxRejected:'#ef4444',TxEvicted:'#f97316',MempoolDrain:'#7c3aed',
+  PeerConnected:'#f97316',PeerDisconnected:'#fb923c',NodeStarting:'#94a3b8',SlotTick:'#1e293b',SlotNotProposer:'#334155',ScenarioEvent:'#eab308',
 };
-function ecolor(kind) { return EVENT_COLOR[kind] || '#64748b'; }
+function ecolor(k){return EVENT_COLOR[k]||'#64748b';}
 
-// ── State ─────────────────────────────────────────────────────────────
-const S = {
-  events: [],            // WsEnvelope[]
-  totalEvents: 0,
-  nodeHeights: Object.fromEntries(NODES.map(n=>[n,0])),
-  // blocks
-  blocks: new Map(),     // height -> {hash,proposer,txs,slot,producedBy,receivedBy,ts}
-  // mempool
-  mp: Object.fromEntries(NODES.map(n=>[n,{pool:0,ok:0,rej:0,ev:0}])),
-  mpLog: [],
-  // network
+// Block graph constants
+const BW=164, BH=96, BGAP=28, BPAD=18; // block width/height/gap/padding
+const MAX_EVENTS=2000, MAX_BLOCKS_GRAPH=80, MAX_MP_LOG=60, MAX_GOSSIP=20;
+const RENDER_MS=80, MAX_POOL=10000;
+
+// ── State ─────────────────────────────────────────────────────────────────────
+const S={
+  events:[], totalEvents:0,
+  nodeHeights:Object.fromEntries(NODES.map(n=>[n,0])),
+
+  // Block graph: hash → {height,hash,prevHash,proposer,txs,slot,producedBy,receivedBy:Set,isOrphan,ts}
+  blockGraph: new Map(),
+  // nodeAddress → node index (built from NodeStarting events)
+  proposerToNode: new Map(),
+
+  // Mempool
+  mp: Object.fromEntries(NODES.map(n=>[n,{pool:0,ok:0,rej:0,ev:0,gossip:0}])),
+  mpLog:[],
+
+  // Network
   peers: Object.fromEntries(NODES.map(n=>[n,new Set()])),
-  gossip: [],
-  peersDirty: true,
-  // scenarios
-  scenarios: {},
-  // swimlane state
-  windowSecs: 60,
-  pxPerSec: 15,
-  follow: true,
-  swimStart: 0,
-  lastDrawnIdx: 0,
+  gossip:[], peersDirty:true,
+
+  // Scenarios
+  scenarios:{},
+
+  // Swimlane controls
+  windowSecs:60, pxPerSec:15, follow:true, swimStart:0,
+
+  // Chain follow
+  chainFollow: true,
+  chainShowOrphans: true,
 };
 
-// ── Render scheduler (dirty flags + throttle) ─────────────────────────
-const dirty = Object.fromEntries(['flow','blocks','mempool','network','scenarios'].map(t=>[t,false]));
-const lastRender = {};
-let rafPending = false;
-let activeTab = 'flow';
+// ── Render scheduler ──────────────────────────────────────────────────────────
+const dirty={flow:false,chain:false,network:false,scenarios:false};
+const lastRender={};
+let rafPending=false, activeTab='flow';
 
-function markDirty(tab) {
-  dirty[tab] = true;
-  if (!rafPending) {
-    rafPending = true;
-    requestAnimationFrame(flushRender);
+function markDirty(tab){
+  dirty[tab]=true;
+  if(!rafPending){rafPending=true;requestAnimationFrame(flushRender);}
+}
+function flushRender(){
+  rafPending=false;
+  const now=performance.now();
+  if(dirty[activeTab]){
+    const el=now-(lastRender[activeTab]||0);
+    if(el>=RENDER_MS){doRender(activeTab);lastRender[activeTab]=now;dirty[activeTab]=false;}
+    else setTimeout(()=>{dirty[activeTab]=true;markDirty(activeTab);},RENDER_MS-el);
   }
 }
-
-function flushRender() {
-  rafPending = false;
-  const now = performance.now();
-  if (dirty[activeTab]) {
-    const elapsed = now - (lastRender[activeTab] || 0);
-    if (elapsed >= RENDER_THROTTLE_MS) {
-      doRender(activeTab);
-      lastRender[activeTab] = now;
-      dirty[activeTab] = false;
-    } else {
-      // reschedule
-      setTimeout(() => { dirty[activeTab] = true; markDirty(activeTab); },
-                 RENDER_THROTTLE_MS - elapsed);
-    }
-  }
+function doRender(tab){
+  if(tab==='flow')      drawSwimlane();
+  if(tab==='chain')     { drawChain(); renderMempool(); }
+  if(tab==='network')   renderNetwork();
+  if(tab==='scenarios') renderScenarios();
 }
 
-function doRender(tab) {
-  if (tab === 'flow')      drawSwimlane(false);
-  if (tab === 'blocks')    renderBlocks();
-  if (tab === 'mempool')   renderMempool();
-  if (tab === 'network')   renderNetwork();
-  if (tab === 'scenarios') renderScenarios();
-}
+// ── WebSocket ─────────────────────────────────────────────────────────────────
+let ws, reconnDelay=1000;
+let pendingBatch=[], batchTimer=null;
 
-// ── WebSocket ─────────────────────────────────────────────────────────
-let ws, reconnDelay = 1000;
-// Batch: collect events for one microtask tick before processing
-let pendingBatch = [], batchTimer = null;
-
-function connect() {
-  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-  ws = new WebSocket(`${proto}://${location.host}/ws`);
-  ws.onopen = () => {
-    document.getElementById('conn-dot').className = 'ok';
-    document.getElementById('conn-txt').textContent = 'Connecté';
-    reconnDelay = 1000;
+function connect(){
+  const proto=location.protocol==='https:'?'wss':'ws';
+  ws=new WebSocket(`${proto}://${location.host}`);
+  ws.onopen=()=>{
+    document.getElementById('conn-dot').className='ok';
+    document.getElementById('conn-txt').textContent='Connected';
+    reconnDelay=1000;
   };
-  ws.onclose = () => {
-    document.getElementById('conn-dot').className = '';
-    document.getElementById('conn-txt').textContent = 'Reconnexion…';
-    setTimeout(connect, reconnDelay);
-    reconnDelay = Math.min(reconnDelay*2, 30000);
+  ws.onclose=()=>{
+    document.getElementById('conn-dot').className='';
+    document.getElementById('conn-txt').textContent='Reconnecting…';
+    setTimeout(connect,reconnDelay);
+    reconnDelay=Math.min(reconnDelay*2,30000);
   };
-  ws.onmessage = e => {
-    let msg; try { msg = JSON.parse(e.data); } catch { return; }
-    if (msg.ctrl) return;
+  ws.onmessage=e=>{
+    let msg;try{msg=JSON.parse(e.data);}catch{return;}
+    if(msg.lagged)return;
     pendingBatch.push(msg);
-    if (!batchTimer) batchTimer = setTimeout(processBatch, 16);
+    if(!batchTimer)batchTimer=setTimeout(processBatch,16);
   };
 }
 
-function processBatch() {
-  batchTimer = null;
-  const batch = pendingBatch;
-  pendingBatch = [];
-  let needsFlow=false, needsBlocks=false, needsMp=false, needsNet=false, needsSc=false;
+function processBatch(){
+  batchTimer=null;
+  const batch=pendingBatch; pendingBatch=[];
+  let nFlow=false,nChain=false,nNet=false,nSc=false;
 
-  for (const env of batch) {
+  for(const env of batch){
     S.totalEvents++;
-    // Circular buffer: drop oldest when full
-    if (S.events.length >= MAX_EVENTS) S.events.splice(0, 200);
+    if(S.events.length>=MAX_EVENTS)S.events.splice(0,200);
     S.events.push(env);
-
-    const k = env.event.kind;
+    const k=env.event.kind;
 
     // Heights
-    if (k==='BlockProposed'||k==='BlockFromPeer'||k==='ApiGetTip') {
-      const h = env.event.height||0;
-      if (h > S.nodeHeights[env.node]) { S.nodeHeights[env.node]=h; updateHeights(); }
+    if(k==='BlockProposed'||k==='BlockFromPeer'||k==='ApiGetTip'){
+      const h=env.event.height||0;
+      if(h>(S.nodeHeights[env.node]||0)){S.nodeHeights[env.node]=h;updateHeights();}
     }
 
-    // Blocks
-    if (k==='BlockProposed') {
-      if (!S.blocks.has(env.event.height)) {
-        S.blocks.set(env.event.height, {
-          height:env.event.height, hash:env.event.hash, proposer:env.event.proposer,
-          txs:env.event.txs, slot:env.event.slot,
-          producedBy:env.node, receivedBy:new Map([[env.node,new Date(env.ts)]]),
-          ts:new Date(env.ts)
-        });
-        needsBlocks=true;
-        if (S.blocks.size>MAX_BLOCKS) {
-          const oldest=Math.min(...S.blocks.keys());
-          S.blocks.delete(oldest);
-        }
+    // Proposer → node index (from NodeStarting address field)
+    if(k==='NodeStarting'){
+      const idx=NODES.indexOf(env.node);
+      if(idx>=0) S.proposerToNode.set(env.event.node, idx);
+    }
+
+    // ── Block graph ──────────────────────────────────────────────────────────
+    if(k==='BlockProposed'){
+      const {height,hash,slot,txs,proposer}=env.event;
+      if(!S.blockGraph.has(hash)){
+        S.blockGraph.set(hash,{height,hash,prevHash:null,proposer,txs,slot,
+          producedBy:env.node, receivedBy:new Set([env.node]), isOrphan:false,
+          ts:new Date(env.ts)});
+        pruneBlockGraph();
+        nChain=true;
       }
     }
-    if (k==='BlockFromPeer') {
-      const b = S.blocks.get(env.event.height);
-      if (b) { b.receivedBy.set(env.node,new Date(env.ts)); needsBlocks=true; }
-      else {
-        S.blocks.set(env.event.height, {
-          height:env.event.height,hash:env.event.hash,proposer:env.event.proposer,
-          txs:env.event.txs,slot:0,producedBy:null,
-          receivedBy:new Map([[env.node,new Date(env.ts)]]),ts:new Date(env.ts)
-        });
-        needsBlocks=true;
+    if(k==='BlockFromPeer'){
+      const {height,hash,proposer,txs}=env.event;
+      if(S.blockGraph.has(hash)){
+        S.blockGraph.get(hash).receivedBy.add(env.node);
+        nChain=true;
+      } else {
+        S.blockGraph.set(hash,{height,hash,prevHash:null,proposer,txs,slot:0,
+          producedBy:null, receivedBy:new Set([env.node]), isOrphan:false,
+          ts:new Date(env.ts)});
+        pruneBlockGraph();
+        nChain=true;
       }
     }
-
-    // Mempool
-    const mp = S.mp[env.node];
-    if (mp) {
-      if (k==='TxAccepted') { mp.ok++; mp.pool=env.event.pool_size||0; needsMp=true;
-        S.mpLog.unshift({ts:env.ts,node:env.node,k,tx:env.event.tx_hash,pool:mp.pool}); }
-      if (k==='TxRejected') { mp.rej++; needsMp=true;
-        S.mpLog.unshift({ts:env.ts,node:env.node,k,tx:env.event.tx_hash,reason:env.event.reason}); }
-      if (k==='TxEvicted')  { mp.ev++;  needsMp=true;
-        S.mpLog.unshift({ts:env.ts,node:env.node,k,tx:env.event.evicted}); }
-      if (k==='MempoolDrain') { mp.pool=0; needsMp=true;
-        S.mpLog.unshift({ts:env.ts,node:env.node,k,size:env.event.mempool_size}); }
-      if (S.mpLog.length>MAX_MP_LOG) S.mpLog.length=MAX_MP_LOG;
+    if(k==='BlockReorged'){
+      // Mark evicted block as orphan
+      const evHash=env.event.evicted;
+      for(const [h,blk] of S.blockGraph){
+        if(h.startsWith(evHash)||hex8(h)===hex8(evHash)){blk.isOrphan=true;}
+      }
+      nChain=true;
     }
 
-    // Peers
-    function ipToNode(addr) {
-      const m=(addr||'').match(/172\.30\.0\.(\d+)/);
-      return m ? NODES[parseInt(m[1])-2] : null;
+    // ── Mempool ──────────────────────────────────────────────────────────────
+    const mp=S.mp[env.node];
+    if(mp){
+      if(k==='TxAccepted'){
+        mp.ok++; mp.pool=env.event.pool_size||0;
+        S.mpLog.unshift({ts:env.ts,node:env.node,k,tx:env.event.tx_hash,val:env.event.value,pool:mp.pool});
+        nChain=true;
+      }
+      if(k==='TxRejected'){
+        mp.rej++;
+        S.mpLog.unshift({ts:env.ts,node:env.node,k,tx:env.event.tx_hash,reason:env.event.reason});
+        nChain=true;
+      }
+      if(k==='TxEvicted'){
+        mp.ev++;
+        S.mpLog.unshift({ts:env.ts,node:env.node,k,tx:env.event.evicted});
+        nChain=true;
+      }
+      if(k==='MempoolDrain'){
+        mp.pool=0;
+        S.mpLog.unshift({ts:env.ts,node:env.node,k,size:env.event.mempool_size});
+        nChain=true;
+      }
+      if(k==='TxGossipAccepted'){
+        mp.gossip++;
+        S.mpLog.unshift({ts:env.ts,node:env.node,k,tx:env.event.tx_hash,from:env.event.from});
+        nChain=true;
+      }
+      if(S.mpLog.length>MAX_MP_LOG)S.mpLog.length=MAX_MP_LOG;
     }
-    if (k==='PeerConnected') {
-      const p=ipToNode(env.event.addr);
-      if (p) { S.peers[env.node]?.add(p); S.peers[p]?.add(env.node); S.peersDirty=true; needsNet=true; }
+
+    // ── P2P Network ──────────────────────────────────────────────────────────
+    function ip2node(addr){const m=(addr||'').match(/172\.30\.0\.(\d+)/);return m?NODES[+m[1]-2]:null;}
+    if(k==='PeerConnected'){
+      const p=ip2node(env.event.addr);
+      if(p){S.peers[env.node]?.add(p);S.peers[p]?.add(env.node);S.peersDirty=true;nNet=true;}
     }
-    if (k==='PeerDisconnected') {
-      const p=ipToNode(env.event.addr);
-      if (p) { S.peers[env.node]?.delete(p); S.peers[p]?.delete(env.node); S.peersDirty=true; needsNet=true; }
+    if(k==='PeerDisconnected'){
+      const p=ip2node(env.event.addr);
+      if(p){S.peers[env.node]?.delete(p);S.peers[p]?.delete(env.node);S.peersDirty=true;nNet=true;}
     }
-    if (k==='BlockFromPeer'||k==='TxGossipAccepted') {
-      const p=ipToNode(env.event.from||'');
+    if(k==='NodeSnapshot'){
+      const h=env.event.tip_height||0;
+      if(h>(S.nodeHeights[env.node]||0)){S.nodeHeights[env.node]=h;updateHeights();}
+      S.peers[env.node]=new Set();
+      for(const addr of (env.event.peers||[])){
+        const p=ip2node(addr);
+        if(p){S.peers[env.node].add(p);S.peers[p]?.add(env.node);}
+      }
+      S.peersDirty=true;nNet=true;
+      const mp=S.mp[env.node];
+      if(mp){mp.pool=env.event.mempool_size||0;nChain=true;}
+    }
+    if(k==='BlockFromPeer'||k==='TxGossipAccepted'){
+      const p=ip2node(env.event.from||'');
       S.gossip.unshift({ts:env.ts,from:p||env.event.from,to:env.node,k,expiry:Date.now()+1500});
-      if (S.gossip.length>MAX_GOSSIP) S.gossip.length=MAX_GOSSIP;
-      needsNet=true;
+      if(S.gossip.length>MAX_GOSSIP)S.gossip.length=MAX_GOSSIP;
+      nNet=true;
     }
 
-    // Scenarios
-    if (k==='ScenarioEvent') {
-      const {scenario,step,status,detail}=env.event;
-      if (!S.scenarios[scenario]) S.scenarios[scenario]={steps:[],status:'running'};
+    // ── Scenarios ─────────────────────────────────────────────────────────
+    if(k==='ScenarioEvent'){
+      const{scenario,step,status,detail}=env.event;
+      if(!S.scenarios[scenario])S.scenarios[scenario]={steps:[],status:'running'};
       S.scenarios[scenario].steps.unshift({ts:env.ts,step,status,detail});
-      if (status==='pass'&&step==='done') S.scenarios[scenario].status='pass';
-      if (status==='fail') S.scenarios[scenario].status='fail';
-      needsSc=true;
-    }
-  }
-
-  document.getElementById('ev-count').textContent = S.totalEvents + ' événements';
-
-  // Always dirty flow (new events = new dots)
-  if (batch.length) needsFlow=true;
-
-  if (needsFlow)    markDirty('flow');
-  if (needsBlocks)  markDirty('blocks');
-  if (needsMp)      markDirty('mempool');
-  if (needsNet)     markDirty('network');
-  if (needsSc)      markDirty('scenarios');
-}
-
-// ── Heights ────────────────────────────────────────────────────────────
-function updateHeights() {
-  document.getElementById('node-hts').innerHTML =
-    NODES.map(n=>`<span class="nbadge">${n}: <b>${S.nodeHeights[n]}</b></span>`).join(' ');
-}
-
-// ── Tab 1: Canvas swimlane ─────────────────────────────────────────────
-const canvas = document.getElementById('swimlane');
-const ctx = canvas.getContext('2d');
-let canvasW=0, canvasH=0;
-// Store drawn events for click detection: [{x,y,env}]
-let drawnDots = [];
-
-function resizeCanvas() {
-  const wrap = document.getElementById('canvas-wrap');
-  canvasW = wrap.clientWidth;
-  canvasH = wrap.clientHeight;
-  canvas.width = canvasW;
-  canvas.height = canvasH;
-  drawSwimlane(true);
-}
-
-function drawSwimlane() {
-  if (!canvasW) return;
-  const now = Date.now();
-  const winMs = S.windowSecs*1000;
-  const startMs = S.follow ? now - winMs : (S.swimStart||now-winMs);
-  const pps = S.pxPerSec;
-
-  ctx.clearRect(0,0,canvasW,canvasH);
-
-  // ── Draw node bands ──────────────────────────────────────────────
-  for (let i=0; i<5; i++) {
-    const bandY = i * NODE_H;
-
-    // Node label header strip
-    ctx.fillStyle = i%2===0 ? '#161929' : '#111420';
-    ctx.fillRect(0, bandY, canvasW, NODE_LABEL_H);
-    ctx.fillStyle = '#94a3b8';
-    ctx.font = 'bold 10px monospace';
-    ctx.fillText(NODES[i], 4, bandY + 10);
-
-    // Sub-lane rows
-    for (let j=0; j<NUM_SUBLANES; j++) {
-      const slY = bandY + NODE_LABEL_H + j*(SUBLANE_H+SUBLANE_GAP);
-      // Alternating sub-lane bg
-      ctx.fillStyle = j%2===0 ? '#0f1117' : '#0c0e16';
-      ctx.fillRect(0, slY, canvasW, SUBLANE_H);
-
-      // Sub-lane type label (left of LABEL_W)
-      ctx.fillStyle = SUBLANES[j].col;
-      ctx.font = '8px monospace';
-      ctx.fillText(SUBLANES[j].label, 2, slY + SUBLANE_H - 3);
-
-      // Vertical divider after label area
-      ctx.strokeStyle = '#1e2433';
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(LABEL_W, slY);
-      ctx.lineTo(LABEL_W, slY + SUBLANE_H);
-      ctx.stroke();
+      if(status==='pass'&&step==='done')S.scenarios[scenario].status='pass';
+      if(status==='fail')S.scenarios[scenario].status='fail';
+      nSc=true;
     }
 
-    // Separator between nodes
-    ctx.strokeStyle = '#2a2d3e';
-    ctx.lineWidth = 2;
-    const sepY = bandY + NODE_H - NODE_SEP/2;
-    ctx.beginPath(); ctx.moveTo(0, sepY); ctx.lineTo(canvasW, sepY); ctx.stroke();
+    nFlow=true;
   }
 
-  // ── Time ticks ───────────────────────────────────────────────────
-  const tickInterval = winMs/8;
-  ctx.strokeStyle = '#1a1f30';
-  ctx.lineWidth = 1;
-  ctx.font = '8px sans-serif';
-  ctx.fillStyle = '#374151';
-  for (let t=Math.ceil(startMs/tickInterval)*tickInterval; t<startMs+winMs; t+=tickInterval) {
-    const x = LABEL_W + ((t-startMs)/1000)*pps;
-    ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,canvasH); ctx.stroke();
-    // Time label at top
-    const secs = Math.round((t - now)/1000);
-    ctx.fillText((secs===0?'now':secs+'s'), x+2, 8);
+  document.getElementById('ev-count').textContent=S.totalEvents+' events';
+  if(nFlow)markDirty('flow');
+  if(nChain)markDirty('chain');
+  if(nNet)markDirty('network');
+  if(nSc)markDirty('scenarios');
+}
+
+function pruneBlockGraph(){
+  if(S.blockGraph.size>MAX_BLOCKS_GRAPH){
+    const minH=Math.min(...[...S.blockGraph.values()].map(b=>b.height));
+    for(const[h,b]of S.blockGraph) if(b.height===minH)S.blockGraph.delete(h);
   }
+}
 
-  // ── Draw events ───────────────────────────────────────────────────
-  drawnDots = [];
-  const ni = Object.fromEntries(NODES.map((n,i)=>[n,i]));
-  const visible = S.events.filter(e=>{
-    const t=new Date(e.ts).getTime();
-    return t>=startMs && t<=startMs+winMs;
-  });
-  document.getElementById('flow-count').textContent = visible.length + ' visibles / ' + S.events.length + ' total';
+function hex8(h){return(h||'').substring(0,8);}
+function fmtTs(iso){
+  const d=new Date(iso);
+  return d.toLocaleTimeString('en',{hour12:false})+'.'+String(d.getMilliseconds()).padStart(3,'0');
+}
+function updateHeights(){
+  document.getElementById('node-hts').innerHTML=
+    NODES.map(n=>`<span class="nbadge">${n}: <b>${S.nodeHeights[n]||0}</b></span>`).join(' ');
+}
+function proposerNodeIdx(address){
+  for(const[addr,idx]of S.proposerToNode) if(addr===address||addr.startsWith(address.substring(0,12)))return idx;
+  // fallback: derive from address hash
+  let sum=0; for(let i=0;i<address.length;i++)sum+=address.charCodeAt(i);
+  return sum%5;
+}
 
-  for (const env of visible) {
-    const nodeIdx = ni[env.node];
-    if (nodeIdx===undefined) continue;
-    const sublaneIdx = getSublane(env.event.kind);
+// ── Tab 1: Swimlane ───────────────────────────────────────────────────────────
+const swimCanvas=document.getElementById('swimlane');
+const swimCtx=swimCanvas.getContext('2d');
+let swW=0,swH=0,drawnDots=[];
 
-    const t = new Date(env.ts).getTime();
-    const x = LABEL_W + ((t-startMs)/1000)*pps;
-    const slY = nodeIdx*NODE_H + NODE_LABEL_H + sublaneIdx*(SUBLANE_H+SUBLANE_GAP);
-    const y   = slY + SUBLANE_H/2;
+const ro1=new ResizeObserver(()=>{
+  const w=document.getElementById('canvas-wrap');
+  swW=w.clientWidth; swH=w.clientHeight;
+  swimCanvas.width=swW; swimCanvas.height=swH;
+  if(activeTab==='flow')drawSwimlane();
+});
+ro1.observe(document.getElementById('canvas-wrap'));
 
-    // SlotTick: tiny dim tick mark (not a circle), others: colored dot
-    if (env.event.kind === 'SlotTick') {
-      ctx.strokeStyle = '#2a3548';
-      ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.moveTo(x, slY+1); ctx.lineTo(x, slY+SUBLANE_H-1); ctx.stroke();
+function drawSwimlane(){
+  if(!swW)return;
+  const now=Date.now(),winMs=S.windowSecs*1000;
+  const startMs=S.follow?now-winMs:(S.swimStart||now-winMs);
+  const pps=S.pxPerSec;
+  swimCtx.clearRect(0,0,swW,swH);
+  // Backgrounds + labels
+  for(let i=0;i<5;i++){
+    const bandY=i*NODE_H;
+    swimCtx.fillStyle=i%2===0?'#161929':'#111420';
+    swimCtx.fillRect(0,bandY,swW,NODE_LABEL_H);
+    swimCtx.fillStyle='#94a3b8'; swimCtx.font='bold 10px monospace';
+    swimCtx.fillText(NODES[i],4,bandY+10);
+    for(let j=0;j<NUM_SUBLANES;j++){
+      const slY=bandY+NODE_LABEL_H+j*(SUBLANE_H+SUBLANE_GAP);
+      swimCtx.fillStyle=j%2===0?'#0f1117':'#0c0e16';
+      swimCtx.fillRect(0,slY,swW,SUBLANE_H);
+      swimCtx.fillStyle=SUBLANES[j].col; swimCtx.font='8px monospace';
+      swimCtx.fillText(SUBLANES[j].name,2,slY+SUBLANE_H-3);
+      swimCtx.strokeStyle='#1e2433'; swimCtx.lineWidth=1;
+      swimCtx.beginPath(); swimCtx.moveTo(LABEL_W,slY); swimCtx.lineTo(LABEL_W,slY+SUBLANE_H); swimCtx.stroke();
+    }
+    swimCtx.strokeStyle='#2a2d3e'; swimCtx.lineWidth=2;
+    const sep=bandY+NODE_H-NODE_SEP/2;
+    swimCtx.beginPath(); swimCtx.moveTo(0,sep); swimCtx.lineTo(swW,sep); swimCtx.stroke();
+  }
+  // Time ticks
+  const tick=winMs/8;
+  swimCtx.strokeStyle='#1a1f30'; swimCtx.lineWidth=1;
+  swimCtx.fillStyle='#374151'; swimCtx.font='8px sans-serif';
+  for(let t=Math.ceil(startMs/tick)*tick;t<startMs+winMs;t+=tick){
+    const x=LABEL_W+((t-startMs)/1000)*pps;
+    swimCtx.beginPath();swimCtx.moveTo(x,0);swimCtx.lineTo(x,swH);swimCtx.stroke();
+    swimCtx.fillText((Math.round((t-now)/1000)||0)+'s',x+2,8);
+  }
+  // Events
+  drawnDots=[];
+  const ni=Object.fromEntries(NODES.map((n,i)=>[n,i]));
+  const visible=S.events.filter(e=>{const t=new Date(e.ts).getTime();return t>=startMs&&t<=startMs+winMs;});
+  document.getElementById('flow-count').textContent=visible.length+' visible / '+S.events.length+' total';
+  for(const env of visible){
+    const nodeIdx=ni[env.node]; if(nodeIdx===undefined)continue;
+    const sl=getSublane(env.event.kind);
+    const t=new Date(env.ts).getTime();
+    const x=LABEL_W+((t-startMs)/1000)*pps;
+    const slY=nodeIdx*NODE_H+NODE_LABEL_H+sl*(SUBLANE_H+SUBLANE_GAP);
+    const y=slY+SUBLANE_H/2;
+    if(env.event.kind==='SlotTick'){
+      swimCtx.strokeStyle='#2a3548'; swimCtx.lineWidth=1;
+      swimCtx.beginPath();swimCtx.moveTo(x,slY+1);swimCtx.lineTo(x,slY+SUBLANE_H-1);swimCtx.stroke();
     } else {
-      const r = 4;
-      ctx.beginPath();
-      ctx.arc(x, y, r, 0, Math.PI*2);
-      ctx.fillStyle = ecolor(env.event.kind);
-      ctx.fill();
-      drawnDots.push({x, y, r, env});
+      swimCtx.beginPath();swimCtx.arc(x,y,4,0,Math.PI*2);
+      swimCtx.fillStyle=ecolor(env.event.kind); swimCtx.fill();
+      drawnDots.push({x,y,env});
     }
   }
-}
-
-canvas.addEventListener('click', e => {
-  const rect = canvas.getBoundingClientRect();
-  const scaleX = canvasW / rect.width;
-  const scaleY = canvasH / rect.height;
-  const mx = (e.clientX-rect.left)*scaleX;
-  const my = (e.clientY-rect.top)*scaleY;
-  let best=null, bestD=Infinity;
-  for (const d of drawnDots) {
-    const dist=Math.hypot(d.x-mx, d.y-my);
-    if (dist < (d.r||4)+6 && dist<bestD) { bestD=dist; best=d; }
+  if(S.follow){
+    const parent=swimCanvas.parentElement;
+    parent.scrollLeft=Math.max(0,swimCanvas.scrollWidth-parent.clientWidth);
   }
-  if (best) showDialog(best.env);
+}
+swimCanvas.addEventListener('click',e=>{
+  const r=swimCanvas.getBoundingClientRect();
+  const sx=swW/r.width,sy=swH/r.height;
+  const mx=(e.clientX-r.left)*sx,my=(e.clientY-r.top)*sy;
+  let best=null,bestD=Infinity;
+  for(const d of drawnDots){const dist=Math.hypot(d.x-mx,d.y-my);if(dist<10&&dist<bestD){bestD=dist;best=d;}}
+  if(best)showDialog(best.env);
 });
 
-// ── Dialog ─────────────────────────────────────────────────────────────
-function showDialog(env) {
-  document.getElementById('dlg-title').textContent = env.event.kind + ' — ' + env.node;
-  const f = document.getElementById('dlg-fields');
+// ── Tab 2: Block Chain Canvas ────────────────────────────────────────────────
+const chainCanvas=document.getElementById('chain-canvas');
+const chainCtx=chainCanvas.getContext('2d');
+let chainW=0, chainH=0;
+let selectedBlock=null;
+
+function blocksByHeight(){
+  // Returns: Map<height, BlockNode[]> sorted asc
+  const m=new Map();
+  for(const blk of S.blockGraph.values()){
+    if(!m.has(blk.height))m.set(blk.height,[]);
+    m.get(blk.height).push(blk);
+  }
+  return new Map([...m.entries()].sort((a,b)=>a[0]-b[0]));
+}
+
+// Layout: height → {blocks: [{blk, row}], x}
+function computeLayout(){
+  const byH=blocksByHeight();
+  const heights=[...byH.keys()];
+  if(!heights.length)return{cols:[],totalW:0,totalH:BH+2*BPAD};
+
+  const cols=[];
+  let x=BPAD;
+  for(const h of heights){
+    const blocks=byH.get(h);
+    const rows=blocks.map((blk,row)=>({blk,row}));
+    cols.push({height:h,blocks:rows,x});
+    x+=BW+BGAP;
+  }
+  const totalW=x-BGAP+BPAD;
+  const maxRows=Math.max(...cols.map(c=>c.blocks.length));
+  const totalH=maxRows*(BH+12)+2*BPAD;
+  return{cols,totalW,totalH};
+}
+
+function rowY(row){return BPAD+row*(BH+12);}
+
+function drawChain(){
+  const layout=computeLayout();
+  const scrollDiv=document.getElementById('chain-scroll');
+  const viewW=scrollDiv.clientWidth||400;
+  const viewH=scrollDiv.clientHeight||200;
+
+  chainCanvas.width=Math.max(viewW,layout.totalW);
+  chainCanvas.height=Math.max(viewH,layout.totalH);
+  chainCtx.clearRect(0,0,chainCanvas.width,chainCanvas.height);
+
+  if(!layout.cols.length){
+    chainCtx.fillStyle='#475569'; chainCtx.font='13px sans-serif';
+    chainCtx.fillText('Waiting for blocks…',20,30);
+    document.getElementById('chain-stats').textContent='0 blocks';
+    return;
+  }
+
+  const showOrphans=S.chainShowOrphans;
+  document.getElementById('chain-stats').textContent=
+    S.blockGraph.size+' blocks · '+layout.cols.length+' heights';
+
+  // Draw arrows (edges between consecutive heights)
+  for(let ci=1;ci<layout.cols.length;ci++){
+    const prev=layout.cols[ci-1], cur=layout.cols[ci];
+    for(const{blk:cBlk,row:cRow}of cur.blocks){
+      if(!showOrphans&&cBlk.isOrphan)continue;
+      // Find the canonical prev block (same height-1, not orphan)
+      const prevBlocks=prev.blocks.filter(({blk:pb})=>showOrphans||!pb.isOrphan);
+      if(!prevBlocks.length)continue;
+      const{blk:pBlk,row:pRow}=prevBlocks[0];
+      const x1=prev.x+BW, y1=rowY(pRow)+BH/2;
+      const x2=cur.x,     y2=rowY(cRow)+BH/2;
+      chainCtx.strokeStyle=cBlk.isOrphan?'#5d1a1a':'#2a3548';
+      chainCtx.lineWidth=cBlk.isOrphan?1:2;
+      chainCtx.setLineDash(cBlk.isOrphan?[4,4]:[]);
+      chainCtx.beginPath();
+      chainCtx.moveTo(x1,y1);
+      // Bezier curve for forks
+      const cx=(x1+x2)/2;
+      chainCtx.bezierCurveTo(cx,y1,cx,y2,x2,y2);
+      chainCtx.stroke();
+      chainCtx.setLineDash([]);
+      // Arrow head
+      if(!cBlk.isOrphan){
+        chainCtx.fillStyle='#2a3548';
+        const angle=Math.atan2(y2-y1,x2-x1);
+        chainCtx.beginPath();
+        chainCtx.moveTo(x2,y2);
+        chainCtx.lineTo(x2-8*Math.cos(angle-0.4),y2-8*Math.sin(angle-0.4));
+        chainCtx.lineTo(x2-8*Math.cos(angle+0.4),y2-8*Math.sin(angle+0.4));
+        chainCtx.closePath(); chainCtx.fill();
+      }
+    }
+  }
+
+  // Draw block cards
+  for(const col of layout.cols){
+    for(const{blk,row}of col.blocks){
+      if(!showOrphans&&blk.isOrphan)continue;
+      drawBlockCard(col.x,rowY(row),blk);
+    }
+  }
+
+  // Auto-scroll to latest
+  if(S.chainFollow){
+    const lastCol=layout.cols[layout.cols.length-1];
+    if(lastCol) scrollDiv.scrollLeft=Math.max(0,lastCol.x+BW+BPAD-scrollDiv.clientWidth+40);
+  }
+}
+
+function drawBlockCard(x,y,blk){
+  const ctx=chainCtx;
+  const nodeIdx=proposerNodeIdx(blk.proposer);
+  const borderColor=blk.isOrphan?'#5d1a1a':NODE_COLORS[nodeIdx];
+  const bgColor=blk.isOrphan?'#110a0a':'#1a1d27';
+  const isSelected=selectedBlock&&selectedBlock.hash===blk.hash;
+
+  // Shadow for selected
+  if(isSelected){
+    ctx.shadowColor='#6366f1'; ctx.shadowBlur=12;
+  }
+
+  // Card background
+  ctx.fillStyle=bgColor;
+  ctx.strokeStyle=isSelected?'#6366f1':borderColor;
+  ctx.lineWidth=isSelected?2.5:blk.isOrphan?1:2;
+  roundRect(ctx,x,y,BW,BH,7);
+  ctx.fill(); ctx.stroke();
+  ctx.shadowBlur=0;
+
+  // Colored left accent bar
+  ctx.fillStyle=borderColor;
+  ctx.beginPath();
+  ctx.moveTo(x,y+7);
+  ctx.lineTo(x,y+BH-7);
+  ctx.arcTo(x,y+BH-7,x+4,y+BH-7,4);
+  ctx.lineTo(x+4,y+7);
+  ctx.arcTo(x+4,y+7,x,y+7,4);
+  ctx.closePath(); ctx.fill();
+
+  // Orphan badge
+  if(blk.isOrphan){
+    ctx.fillStyle='#ef4444'; ctx.font='bold 9px sans-serif';
+    ctx.fillText('ORPHAN',x+BW-50,y+11);
+  }
+
+  // Height (large)
+  ctx.fillStyle=blk.isOrphan?'#6b7280':'#e2e8f0';
+  ctx.font='bold 15px monospace';
+  ctx.fillText('h='+blk.height,x+12,y+20);
+
+  // Hash
+  ctx.fillStyle='#64748b'; ctx.font='10px monospace';
+  ctx.fillText('#'+hex8(blk.hash),x+12,y+34);
+
+  // Slot + TXs
+  ctx.fillStyle='#94a3b8'; ctx.font='10px sans-serif';
+  ctx.fillText('slot '+blk.slot+'  '+blk.txs+' tx',x+12,y+48);
+
+  // Proposer
+  const pColor=blk.isOrphan?'#6b7280':NODE_COLORS[nodeIdx];
+  ctx.fillStyle=pColor; ctx.font='9px monospace';
+  ctx.fillText((blk.proposer||'?').substring(0,16)+'…',x+12,y+61);
+
+  // Propagation dots
+  const dotR=5, dotY=y+BH-10;
+  NODES.forEach((n,i)=>{
+    const has=blk.receivedBy.has(n);
+    ctx.beginPath();
+    ctx.arc(x+14+i*21,dotY,dotR,0,Math.PI*2);
+    if(has){
+      ctx.fillStyle=NODE_COLORS[i];
+      ctx.fill();
+    } else {
+      ctx.strokeStyle='#2a3548'; ctx.lineWidth=1.5;
+      ctx.stroke();
+    }
+    // Proposer marker (ring)
+    if(n===blk.producedBy){
+      ctx.strokeStyle=NODE_COLORS[i]; ctx.lineWidth=1.5;
+      ctx.beginPath();
+      ctx.arc(x+14+i*21,dotY,dotR+3,0,Math.PI*2);
+      ctx.stroke();
+    }
+  });
+}
+
+function roundRect(ctx,x,y,w,h,r){
+  ctx.beginPath();
+  ctx.moveTo(x+r,y);
+  ctx.lineTo(x+w-r,y); ctx.arcTo(x+w,y,x+w,y+r,r);
+  ctx.lineTo(x+w,y+h-r); ctx.arcTo(x+w,y+h,x+w-r,y+h,r);
+  ctx.lineTo(x+r,y+h); ctx.arcTo(x,y+h,x,y+h-r,r);
+  ctx.lineTo(x,y+r); ctx.arcTo(x,y,x+r,y,r);
+  ctx.closePath();
+}
+
+// Click on chain canvas → show block details
+chainCanvas.addEventListener('click',e=>{
+  const r=chainCanvas.getBoundingClientRect();
+  const mx=e.clientX-r.left+document.getElementById('chain-scroll').scrollLeft;
+  const my=e.clientY-r.top+document.getElementById('chain-scroll').scrollTop;
+  const layout=computeLayout();
+  for(const col of layout.cols){
+    for(const{blk,row}of col.blocks){
+      const bx=col.x,by=rowY(row);
+      if(mx>=bx&&mx<=bx+BW&&my>=by&&my<=by+BH){
+        selectedBlock=selectedBlock?.hash===blk.hash?null:blk;
+        if(selectedBlock) showBlockDialog(blk);
+        markDirty('chain');
+        return;
+      }
+    }
+  }
+  selectedBlock=null; markDirty('chain');
+});
+
+function showBlockDialog(blk){
+  document.getElementById('dlg-title').textContent='Block h='+blk.height;
+  const f=document.getElementById('dlg-fields');
   f.innerHTML='';
-  const all = {ts:env.ts,node:env.node,level:env.level,seq:env.seq,...env.event};
-  delete all.kind;
-  for (const [k,v] of Object.entries(all)) {
-    const row=document.createElement('div'); row.className='dlg-row';
-    row.innerHTML=`<span class="dlg-key">${k}</span><span class="dlg-val">${v}</span>`;
-    f.appendChild(row);
+  const rows={
+    'Hash': blk.hash,
+    'Height': blk.height,
+    'Slot': blk.slot,
+    'TXs': blk.txs,
+    'Proposer': blk.proposer||'?',
+    'Produced by': blk.producedBy||'?',
+    'Received by': [...blk.receivedBy].join(', '),
+    'Orphan': blk.isOrphan?'YES (reorged)':'No',
+    'Timestamp': blk.ts?.toISOString()||'?',
+  };
+  for(const[k,v]of Object.entries(rows)){
+    const d=document.createElement('div');d.className='dlg-row';
+    d.innerHTML=`<span class="dlg-key">${k}</span><span class="dlg-val">${v}</span>`;
+    f.appendChild(d);
   }
   document.getElementById('ev-dialog').showModal();
 }
 
-// ── Tab 2: Blocks ──────────────────────────────────────────────────────
-// Incremental: keep a Set of rendered heights, only add new rows
-const renderedBlocks = new Set();
-function renderBlocks() {
-  const tbody = document.getElementById('blocks-body');
-  const sorted = [...S.blocks.values()].sort((a,b)=>b.height-a.height);
-  // Add new rows at the top
-  for (const b of sorted) {
-    const existing = document.getElementById('blk-'+b.height);
-    if (existing) {
-      // Update node icons in place
-      NODES.forEach((n,i)=>{
-        const cell = existing.cells[4+i];
-        if (cell) cell.innerHTML = nodeIcon(n,b);
-      });
-      // Update spread
-      const spreadCell = existing.cells[9];
-      if (spreadCell) spreadCell.textContent = spread(b);
-    } else {
-      const tr = document.createElement('tr');
-      tr.id='blk-'+b.height;
-      tr.innerHTML=`
-        <td><strong>${b.height}</strong></td>
-        <td style="font-family:monospace;font-size:10px">${(b.hash||'').substring(0,12)}…</td>
-        <td style="font-size:10px;color:var(--muted)">${(b.proposer||'?').substring(0,10)}…</td>
-        <td>${b.txs}</td>
-        ${NODES.map(n=>`<td>${nodeIcon(n,b)}</td>`).join('')}
-        <td style="color:var(--muted);font-size:10px">${spread(b)}</td>`;
-      if (tbody.firstChild) tbody.insertBefore(tr, tbody.firstChild);
-      else tbody.appendChild(tr);
-    }
-  }
-  // Remove rows beyond MAX_BLOCKS
-  while (tbody.rows.length > MAX_BLOCKS) tbody.deleteRow(tbody.rows.length-1);
-}
-
-function nodeIcon(n,b) {
-  if (n===b.producedBy) return `<span class="ni p">P</span>`;
-  if (b.receivedBy.has(n)) return `<span class="ni y">✓</span>`;
-  return `<span class="ni n">?</span>`;
-}
-function spread(b) {
-  if (b.receivedBy.size<2) return '—';
-  const times=[...b.receivedBy.values()].map(d=>d.getTime());
-  return (Math.max(...times)-Math.min(...times))+'ms';
-}
-
-// ── Tab 3: Mempool ─────────────────────────────────────────────────────
+// ── Mempool rendering ─────────────────────────────────────────────────────────
 let mpBuilt=false;
-function renderMempool() {
-  if (!mpBuilt) {
-    document.getElementById('mp-grid').innerHTML = NODES.map(n=>`
-      <div class="mp-card">
-        <div class="mp-label">${n}</div>
-        <div class="mp-bar-wrap"><div class="mp-bar" id="mpb-${n}" style="height:2px"></div></div>
-        <div class="mp-size" id="mps-${n}">0</div>
-        <div class="mp-stats">
-          <span class="ok">+<span id="mpo-${n}">0</span></span> &nbsp;
-          <span class="bad">–<span id="mpr-${n}">0</span></span> &nbsp;
-          évict <span id="mpe-${n}">0</span>
+function renderMempool(){
+  if(!mpBuilt){
+    document.getElementById('mp-bars').innerHTML=NODES.map((n,i)=>`
+      <div class="mp-node">
+        <div class="mp-node-label">${n}</div>
+        <div class="mp-bar-wrap">
+          <div class="mp-bar" id="mpb-${n}" style="background:${NODE_COLORS[i]};height:2px"></div>
+        </div>
+        <div class="mp-pool-size" id="mps-${n}">0</div>
+        <div class="mp-node-stats">
+          <span class="good">+<span id="mpo-${n}">0</span></span>&nbsp;
+          <span class="bad">–<span id="mpr-${n}">0</span></span>&nbsp;
+          <span>↑<span id="mpe-${n}">0</span></span>
         </div>
       </div>`).join('');
     mpBuilt=true;
@@ -727,178 +914,178 @@ function renderMempool() {
   NODES.forEach(n=>{
     const m=S.mp[n];
     const pct=Math.min(100,(m.pool/MAX_POOL)*100);
+    const el=id=>{const e=document.getElementById(id+'-'+n);if(e)e.textContent=m[id.replace('mp','').toLowerCase()]||0;};
     const bar=document.getElementById('mpb-'+n);
-    if(bar) bar.style.height=Math.max(2,pct)+'px';
-    const sz=document.getElementById('mps-'+n); if(sz) sz.textContent=m.pool;
-    const ok=document.getElementById('mpo-'+n); if(ok) ok.textContent=m.ok;
-    const rj=document.getElementById('mpr-'+n); if(rj) rj.textContent=m.rej;
-    const ev=document.getElementById('mpe-'+n); if(ev) ev.textContent=m.ev;
+    if(bar)bar.style.height=Math.max(2,pct)+'px';
+    const sz=document.getElementById('mps-'+n);if(sz)sz.textContent=m.pool;
+    const ok=document.getElementById('mpo-'+n);if(ok)ok.textContent=m.ok;
+    const rj=document.getElementById('mpr-'+n);if(rj)rj.textContent=m.rej;
+    const ev=document.getElementById('mpe-'+n);if(ev)ev.textContent=m.ev;
   });
-  // Events log: rebuild only the list (small, bounded at 40)
-  const ul=document.getElementById('mp-list');
+  // TX log
+  const ul=document.getElementById('tx-log-list');
   ul.innerHTML=S.mpLog.map(e=>{
-    const col=e.k==='TxAccepted'?'var(--green)':e.k==='TxRejected'?'var(--red)':'var(--orange)';
-    const icon=e.k==='TxAccepted'?'+':e.k==='TxRejected'?'✗':'↑';
-    const tx=(e.tx||'').substring(0,10);
-    return `<li><span style="color:var(--muted);font-size:9px">${fmtTs(e.ts)}</span>
+    let pill='',extra='';
+    if(e.k==='TxAccepted'){
+      pill=`<span class="tx-pill accept">+accept</span>`;
+      extra=`<span class="tx-value">${fmtVal(e.val)}</span><span class="tx-pool">[${e.pool}]</span>`;
+    } else if(e.k==='TxRejected'){
+      pill=`<span class="tx-pill reject">✗reject</span>`;
+      extra=e.reason?`<span style="color:var(--red);font-size:10px">${e.reason.substring(0,40)}</span>`:'';
+    } else if(e.k==='TxEvicted'){
+      pill=`<span class="tx-pill evict">↑evict</span>`;
+    } else if(e.k==='TxGossipAccepted'){
+      pill=`<span class="tx-pill gossip">⇄gossip</span>`;
+      extra=e.from?`<span style="color:var(--muted);font-size:10px">from ${e.from}</span>`:'';
+    } else if(e.k==='MempoolDrain'){
+      return `<li><span style="color:var(--muted);font-size:9px">${fmtTs(e.ts)}</span>
+        <span class="nbadge">${e.node}</span>
+        <span style="color:var(--purple)">⬇ drain ${e.size} tx</span></li>`;
+    }
+    const tx=(e.tx||'').substring(0,12);
+    return `<li>
+      <span style="color:var(--muted);font-size:9px">${fmtTs(e.ts)}</span>
       <span class="nbadge">${e.node}</span>
-      <span style="color:${col}">${icon} ${e.k.replace('Tx','')}</span>
+      ${pill}
       <code style="font-size:10px;color:var(--muted)">${tx}</code>
-      ${e.pool!==undefined?`<span style="color:var(--muted)">[${e.pool}]</span>`:''}
-      ${e.reason?`<span style="color:var(--red);font-size:9px">${e.reason}</span>`:''}</li>`;
+      ${extra}
+    </li>`;
   }).join('');
 }
 
-// ── Tab 4: Network SVG ─────────────────────────────────────────────────
+function fmtVal(v){
+  if(!v)return'';
+  if(v>=1e9)return(v/1e9).toFixed(2)+'B';
+  if(v>=1e6)return(v/1e6).toFixed(1)+'M';
+  if(v>=1e3)return(v/1e3).toFixed(1)+'k';
+  return v;
+}
+
+// ── Tab 3: P2P Network ────────────────────────────────────────────────────────
 let svgInited=false;
-function renderNetwork() {
+function renderNetwork(){
   const svg=document.getElementById('peer-svg');
-  if (!svgInited) {
+  if(!svgInited){
     svgInited=true;
-    // Static elements: node circles + labels
+    const eg=mkSVG('g');eg.id='edges';svg.appendChild(eg);
+    const pg=mkSVG('g');pg.id='pulses';svg.appendChild(pg);
     NODES.forEach((n,i)=>{
-      const {x,y}=NODE_POS[n];
-      const g=mkSVG('g');
-      const c=mkSVG('circle');
-      c.setAttribute('cx',x); c.setAttribute('cy',y); c.setAttribute('r',20);
-      c.setAttribute('fill',NODE_COLORS[i]); c.setAttribute('stroke','#fff'); c.setAttribute('stroke-width','1.5');
+      const{x,y}=NODE_POS[n];const g=mkSVG('g');
+      const c=mkSVG('circle');c.setAttribute('cx',x);c.setAttribute('cy',y);c.setAttribute('r',20);
+      c.setAttribute('fill',NODE_COLORS[i]);c.setAttribute('stroke','#fff');c.setAttribute('stroke-width','1.5');
       g.appendChild(c);
-      const t=mkSVG('text');
-      t.setAttribute('x',x); t.setAttribute('y',y+5);
-      t.setAttribute('text-anchor','middle'); t.setAttribute('fill','#fff');
-      t.setAttribute('font-size','11'); t.setAttribute('font-weight','700');
-      t.textContent='n'+(i+1);
-      g.appendChild(t);
-      const lbl=mkSVG('text');
-      lbl.id='nlbl-'+n; lbl.setAttribute('x',x); lbl.setAttribute('y',y+34);
-      lbl.setAttribute('text-anchor','middle'); lbl.setAttribute('fill','#64748b');
-      lbl.setAttribute('font-size','10'); lbl.textContent='h=0';
-      g.appendChild(lbl);
+      const t=mkSVG('text');t.setAttribute('x',x);t.setAttribute('y',y+5);
+      t.setAttribute('text-anchor','middle');t.setAttribute('fill','#fff');
+      t.setAttribute('font-size','11');t.setAttribute('font-weight','700');
+      t.textContent='n'+(i+1);g.appendChild(t);
+      const lbl=mkSVG('text');lbl.id='nlbl-'+n;lbl.setAttribute('x',x);lbl.setAttribute('y',y+36);
+      lbl.setAttribute('text-anchor','middle');lbl.setAttribute('fill','#64748b');lbl.setAttribute('font-size','10');
+      lbl.textContent='h=0';g.appendChild(lbl);
       svg.appendChild(g);
     });
-    // Edge group (behind nodes)
-    const eg=mkSVG('g'); eg.id='edges';
-    svg.insertBefore(eg,svg.firstChild);
-    // Pulse group (above edges, below labels)
-    const pg=mkSVG('g'); pg.id='pulses';
-    svg.insertBefore(pg, svg.querySelector('g'));
   }
-
-  // Update height labels
-  NODES.forEach(n=>{
-    const l=document.getElementById('nlbl-'+n);
-    if(l) l.textContent='h='+S.nodeHeights[n];
-  });
-
-  // Redraw edges only if peer state changed
-  if (S.peersDirty) {
+  NODES.forEach(n=>{const l=document.getElementById('nlbl-'+n);if(l)l.textContent='h='+(S.nodeHeights[n]||0);});
+  if(S.peersDirty){
     S.peersDirty=false;
-    const eg=document.getElementById('edges');
-    eg.innerHTML='';
+    const eg=document.getElementById('edges');eg.innerHTML='';
     const drawn=new Set();
     NODES.forEach(n=>{
       S.peers[n].forEach(p=>{
-        const key=[n,p].sort().join('-');
-        if (drawn.has(key)) return;
-        drawn.add(key);
-        const a=NODE_POS[n], b=NODE_POS[p];
-        if(!a||!b) return;
+        const k=[n,p].sort().join('-');if(drawn.has(k))return;drawn.add(k);
+        const a=NODE_POS[n],b=NODE_POS[p];if(!a||!b)return;
         const l=mkSVG('line');
-        l.setAttribute('x1',a.x); l.setAttribute('y1',a.y);
-        l.setAttribute('x2',b.x); l.setAttribute('y2',b.y);
-        l.setAttribute('stroke','#4f46e5'); l.setAttribute('stroke-width','2');
-        l.setAttribute('opacity','0.6');
+        l.setAttribute('x1',a.x);l.setAttribute('y1',a.y);l.setAttribute('x2',b.x);l.setAttribute('y2',b.y);
+        l.setAttribute('stroke','#4f46e5');l.setAttribute('stroke-width','2');l.setAttribute('opacity','0.6');
         eg.appendChild(l);
       });
     });
   }
-
-  // Gossip pulses: CSS animation via <circle> with animate
-  const pg=document.getElementById('pulses');
-  pg.innerHTML='';
+  const pg=document.getElementById('pulses');pg.innerHTML='';
   const now=Date.now();
   S.gossip.filter(g=>g.expiry>now).forEach(g=>{
-    const a=NODE_POS[g.from], b=NODE_POS[g.to];
-    if(!a||!b) return;
+    const a=NODE_POS[g.from],b=NODE_POS[g.to];if(!a||!b)return;
     const frac=Math.min(1,(now-(g.expiry-1500))/1500);
-    const cx=a.x+(b.x-a.x)*frac, cy=a.y+(b.y-a.y)*frac;
-    const c=mkSVG('circle');
-    c.setAttribute('cx',cx); c.setAttribute('cy',cy); c.setAttribute('r',5);
+    const cx=a.x+(b.x-a.x)*frac,cy=a.y+(b.y-a.y)*frac;
+    const c=mkSVG('circle');c.setAttribute('cx',cx);c.setAttribute('cy',cy);c.setAttribute('r',5);
     c.setAttribute('fill',g.k==='BlockFromPeer'?'#22c55e':'#3b82f6');
-    c.setAttribute('opacity',(1-frac).toFixed(2));
-    pg.appendChild(c);
+    c.setAttribute('opacity',(1-frac).toFixed(2));pg.appendChild(c);
   });
-
-  // Animate gossip if any active
-  if (S.gossip.some(g=>g.expiry>now)) {
-    setTimeout(()=>{ markDirty('network'); }, 50);
-  }
-
-  // Peer stats
-  document.getElementById('peer-rows').innerHTML=NODES.map(n=>{
-    const conns=[...S.peers[n]];
-    return `<div class="peer-row">
-      <span>${n}</span>
-      <span class="peer-count">${conns.length} pairs</span>
-      <span style="color:var(--muted);font-size:10px">${conns.join(', ')||'—'}</span>
-    </div>`;
-  }).join('');
-
-  // Gossip log
+  if(S.gossip.some(g=>g.expiry>now))setTimeout(()=>markDirty('network'),50);
+  document.getElementById('peer-rows').innerHTML=NODES.map(n=>`
+    <div class="peer-row">
+      <span>${n}</span><span class="peer-count">${S.peers[n].size} peers</span>
+      <span style="color:var(--muted);font-size:10px">${[...S.peers[n]].join(', ')||'—'}</span>
+    </div>`).join('');
   document.getElementById('gossip-list').innerHTML=S.gossip.map(g=>
-    `<li>${fmtTs(g.ts)} <span style="color:${g.k==='BlockFromPeer'?'var(--green)':'var(--blue)'}">${g.k==='BlockFromPeer'?'bloc':'tx'}</span> ${g.from||'?'}→${g.to}</li>`
+    `<li>${fmtTs(g.ts)} <span style="color:${g.k==='BlockFromPeer'?'var(--green)':'var(--blue)'}">${g.k==='BlockFromPeer'?'block':'tx'}</span> ${g.from||'?'}→${g.to}</li>`
   ).join('');
 }
+function mkSVG(t){return document.createElementNS('http://www.w3.org/2000/svg',t);}
 
-function mkSVG(tag) { return document.createElementNS('http://www.w3.org/2000/svg',tag); }
-
-// ── Tab 5: Scenarios ───────────────────────────────────────────────────
-function renderScenarios() {
+// ── Tab 4: Scenarios ──────────────────────────────────────────────────────────
+function renderScenarios(){
   document.querySelectorAll('.sc-btn').forEach(btn=>{
     const sc=S.scenarios[btn.dataset.sc];
     btn.className='sc-btn'+(sc?' '+sc.status:'');
   });
   const all=[];
-  Object.entries(S.scenarios).forEach(([sc,d])=>
-    d.steps.forEach(s=>all.push({sc,...s})));
+  Object.entries(S.scenarios).forEach(([sc,d])=>d.steps.forEach(s=>all.push({sc,...s})));
   all.sort((a,b)=>new Date(b.ts)-new Date(a.ts));
   document.getElementById('sc-list').innerHTML=all.slice(0,80).map(s=>{
     const cls='s-'+s.status;
     const icon={pass:'✓',fail:'✗',start:'▶',progress:'…',running:'⟳'}[s.status]||'·';
-    return `<li><span style="color:var(--muted);font-size:9px">${fmtTs(s.ts)}</span>
+    return `<li>
+      <span style="color:var(--muted);font-size:9px">${fmtTs(s.ts)}</span>
       <span class="nbadge">${s.sc}</span>
-      <span class="${cls}">${icon} [${s.step}] ${s.detail}</span></li>`;
+      <span class="${cls}">${icon} [${s.step}] ${s.detail}</span>
+    </li>`;
   }).join('');
 }
 
-// ── Utils ──────────────────────────────────────────────────────────────
-function fmtTs(iso) {
-  const d=new Date(iso);
-  return d.toLocaleTimeString('fr-FR',{hour12:false})+'.'+String(d.getMilliseconds()).padStart(3,'0');
+// ── Dialog helper ─────────────────────────────────────────────────────────────
+function showDialog(env){
+  document.getElementById('dlg-title').textContent=env.event.kind+' — '+env.node;
+  const f=document.getElementById('dlg-fields');f.innerHTML='';
+  const all={ts:env.ts,node:env.node,seq:env.seq,...env.event};delete all.kind;
+  for(const[k,v]of Object.entries(all)){
+    const d=document.createElement('div');d.className='dlg-row';
+    d.innerHTML=`<span class="dlg-key">${k}</span><span class="dlg-val">${v}</span>`;
+    f.appendChild(d);
+  }
+  document.getElementById('ev-dialog').showModal();
 }
 
-// ── Controls ───────────────────────────────────────────────────────────
+// ── Controls ──────────────────────────────────────────────────────────────────
 document.getElementById('w-range').addEventListener('input',e=>{
   S.windowSecs=+e.target.value;
   document.getElementById('w-val').textContent=S.windowSecs+'s';
-  drawSwimlane(true);
+  drawSwimlane();
 });
 document.getElementById('p-range').addEventListener('input',e=>{
   S.pxPerSec=+e.target.value;
   document.getElementById('p-val').textContent=S.pxPerSec;
-  drawSwimlane(true);
+  drawSwimlane();
 });
 document.getElementById('follow-btn').addEventListener('click',()=>{
   S.follow=!S.follow;
   const btn=document.getElementById('follow-btn');
-  btn.textContent=S.follow?'⟶ Suivre':'⏸ Pausé';
+  btn.textContent=S.follow?'⟶ Follow':'⏸ Paused';
   btn.className=S.follow?'':'off';
-  if (!S.follow) S.swimStart=Date.now()-S.windowSecs*1000;
-  drawSwimlane(true);
+  if(!S.follow)S.swimStart=Date.now()-S.windowSecs*1000;
+  drawSwimlane();
+});
+document.getElementById('chain-follow').addEventListener('click',()=>{
+  S.chainFollow=!S.chainFollow;
+  const btn=document.getElementById('chain-follow');
+  btn.textContent=S.chainFollow?'⟶ Follow':'⏸ Paused';
+  btn.className=S.chainFollow?'':'off';
+});
+document.getElementById('chain-show-orphans').addEventListener('change',e=>{
+  S.chainShowOrphans=e.target.checked;markDirty('chain');
 });
 
-// ── Tab switching ──────────────────────────────────────────────────────
-const DESCS = ['flow','blocks','mempool','network','scenarios'];
+// ── Tab switching ─────────────────────────────────────────────────────────────
+const TABS=['flow','chain','network','scenarios'];
 document.querySelectorAll('.tab-btn').forEach(btn=>{
   btn.addEventListener('click',()=>{
     document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
@@ -906,16 +1093,13 @@ document.querySelectorAll('.tab-btn').forEach(btn=>{
     btn.classList.add('active');
     activeTab=btn.dataset.tab;
     document.getElementById('panel-'+activeTab).classList.add('active');
-    DESCS.forEach(t=>{
-      document.getElementById('desc-'+t).style.display = t===activeTab?'':'none';
-    });
-    // Force immediate render on tab change
-    if (activeTab==='flow') { resizeCanvas(); }
-    else { dirty[activeTab]=true; doRender(activeTab); }
+    TABS.forEach(t=>{const d=document.getElementById('desc-'+t);if(d)d.style.display=t===activeTab?'':'none';});
+    if(activeTab==='flow'){const w=document.getElementById('canvas-wrap');swW=w.clientWidth;swH=w.clientHeight;swimCanvas.width=swW;swimCanvas.height=swH;drawSwimlane();}
+    else{dirty[activeTab]=true;doRender(activeTab);}
   });
 });
 
-// ── Scenario buttons ───────────────────────────────────────────────────
+// Scenario buttons
 document.querySelectorAll('.sc-btn').forEach(btn=>{
   btn.addEventListener('click',()=>{
     const sc=btn.dataset.sc;
@@ -925,14 +1109,21 @@ document.querySelectorAll('.sc-btn').forEach(btn=>{
   });
 });
 
-// ── Resize ─────────────────────────────────────────────────────────────
-const ro=new ResizeObserver(()=>{ if(activeTab==='flow') resizeCanvas(); });
-ro.observe(document.getElementById('canvas-wrap'));
+// Animation loop (network pulses + swimlane follow)
+function animLoop(){
+  if(activeTab==='network'&&S.gossip.some(g=>g.expiry>Date.now()))renderNetwork();
+  if(activeTab==='flow'&&S.follow)drawSwimlane();
+  requestAnimationFrame(animLoop);
+}
 
-// ── Init ───────────────────────────────────────────────────────────────
+// ── Init ──────────────────────────────────────────────────────────────────────
 connect();
 updateHeights();
-resizeCanvas();
+// Initial canvas size
+const initWrap=document.getElementById('canvas-wrap');
+swW=initWrap.clientWidth||800;swH=initWrap.clientHeight||400;
+swimCanvas.width=swW;swimCanvas.height=swH;
+requestAnimationFrame(animLoop);
 </script>
 </body>
 </html>

@@ -29,9 +29,12 @@ pub fn elect_proposer<'a>(
     let seed = sha256d(&seed_input);
 
     // Use the first 8 bytes of the seed to pick a point in [0, total_stake).
-    let pick = u64::from_le_bytes(seed[..8].try_into().expect("seed is 32 bytes")) % total_stake;
+    let pick = u64::from_le_bytes([
+        seed[0], seed[1], seed[2], seed[3], seed[4], seed[5], seed[6], seed[7],
+    ]) % total_stake;
 
     // Weighted linear scan: each validator occupies a segment proportional to its stake.
+    // Callers must pass validators sorted by address (see ValidatorStore::all_active).
     let mut acc: u64 = 0;
     for validator in validators {
         acc += validator.stake;

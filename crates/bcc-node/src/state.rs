@@ -6,7 +6,12 @@ use bcc_core::{
 };
 use tokio::sync::{broadcast, Mutex, RwLock};
 
-use crate::{config::NodeConfig, mempool::Mempool, p2p::protocol::Message};
+use crate::{
+    config::NodeConfig,
+    debug_event::{DebugEnvelope, DebugEvent},
+    mempool::Mempool,
+    p2p::protocol::Message,
+};
 
 /// Central shared state of a running node.
 ///
@@ -38,21 +43,47 @@ pub struct NodeState {
     pub config: Arc<NodeConfig>,
     /// Broadcast channel notifying all peer tasks of a newly produced block.
     pub new_block: broadcast::Sender<Block>,
+    /// Broadcast channel streaming structured debug events to the visualizer.
+    pub debug_tx: broadcast::Sender<DebugEnvelope>,
+}
+
+impl NodeState {
+    /// Emits a debug event to all connected visualizer clients.  Fire-and-forget.
+    pub fn emit(&self, event: DebugEvent) {
+        let _ = self.debug_tx.send(DebugEnvelope::now(event));
+    }
+
+    /// Atomically replaces `old_block` with `new_block` at the same height.
+    ///
+    /// Order: rollback old UTXOs → insert new block → apply new UTXOs.
+    /// If `apply_block` fails after `rollback_block` the store implementations
+    /// (sled: crash sentinel; memory: in-memory only) must handle recovery.
+    pub fn reorg_block(
+        &self,
+        old_block: &Block,
+        new_block: &Block,
+    ) -> Result<(), bcc_core::store::StoreError> {
+        self.utxo.rollback_block(old_block)?;
+        self.blocks.insert(new_block)?;
+        self.utxo.apply_block(new_block)?;
+        Ok(())
+    }
 }
 
 impl NodeState {
     /// Constructs a `NodeState` from already-opened stores and config.
     pub fn new(
-        blocks: Arc<dyn BlockStore>,
-        utxo: Arc<dyn UtxoStore>,
+        blocks:     Arc<dyn BlockStore>,
+        utxo:       Arc<dyn UtxoStore>,
         validators: Arc<dyn ValidatorStore>,
-        config: Arc<NodeConfig>,
+        config:     Arc<NodeConfig>,
+        debug_tx:   broadcast::Sender<DebugEnvelope>,
     ) -> Self {
-        let mempool = Arc::new(Mutex::new(Mempool::new(config.mempool_max_size)));
-        let peers = Arc::new(RwLock::new(PeerSet::new()));
+        let mempool   = Arc::new(Mutex::new(Mempool::new(config.mempool_max_size)));
+        let peers     = Arc::new(RwLock::new(PeerSet::new()));
         let (new_block, _) = broadcast::channel(64);
 
-        Self { blocks, utxo, validators, mempool, peers, config, new_block }
+        Self { blocks, utxo, validators, mempool, peers, config, new_block, debug_tx }
     }
 }
 
@@ -86,14 +117,25 @@ impl PeerSet {
         self.peers.keys().copied().collect()
     }
 
+    /// Returns `true` if any connected peer shares the same IP address.
+    /// Used to reject duplicate bidirectional connections.
+    pub fn has_ip(&self, ip: std::net::IpAddr) -> bool {
+        self.peers.keys().any(|a| a.ip() == ip)
+    }
+
     /// Sends `msg` to every connected peer except `source`.
     pub fn broadcast_except(&self, source: &SocketAddr, msg: Message) {
         for (addr, tx) in &self.peers {
             if addr != source {
-                // Non-blocking try_send: drops the message if the peer's outbound buffer is full.
-                // This is intentional — a slow peer should not stall the whole network.
                 let _ = tx.try_send(msg.clone());
             }
+        }
+    }
+
+    /// Sends `msg` to every connected peer (used when there is no originating peer to exclude).
+    pub fn broadcast_all(&self, msg: Message) {
+        for tx in self.peers.values() {
+            let _ = tx.try_send(msg.clone());
         }
     }
 

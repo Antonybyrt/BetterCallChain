@@ -2,19 +2,18 @@ use std::collections::VecDeque;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
+use bcc_node::debug_event::{DebugEvent};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast;
 
-use crate::parser::NodeEvent;
-
+/// Envelope sent to WebSocket clients: the node's event + routing metadata.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WsEnvelope {
     pub seq:   u64,
     pub node:  String,
     pub ts:    DateTime<Utc>,
-    pub level: String,
-    pub event: NodeEvent,
+    pub event: DebugEvent,
 }
 
 pub struct EventBus {
@@ -35,20 +34,21 @@ impl EventBus {
         }
     }
 
-    pub fn publish_raw(&self, node: String, ts: DateTime<Utc>, level: String, event: NodeEvent) {
-        let seq = self.seq.fetch_add(1, Ordering::Relaxed);
-        let envelope = WsEnvelope { seq, node, ts, level, event };
-
-        // Update ring buffer inline with std::sync::Mutex — no spawn overhead
+    /// Publish an event from `node` with an explicit timestamp (from the node's envelope).
+    pub fn publish(&self, node: String, ts: DateTime<Utc>, event: DebugEvent) {
+        let seq      = self.seq.fetch_add(1, Ordering::Relaxed);
+        let envelope = WsEnvelope { seq, node, ts, event };
         {
             let mut buf = self.recent.lock().unwrap();
-            if buf.len() >= self.capacity {
-                buf.pop_front();
-            }
+            if buf.len() >= self.capacity { buf.pop_front(); }
             buf.push_back(envelope.clone());
         }
-
         let _ = self.tx.send(envelope);
+    }
+
+    /// Publish a visualizer-local event (e.g. ScenarioEvent) with the current time.
+    pub fn publish_local(&self, node: String, event: DebugEvent) {
+        self.publish(node, Utc::now(), event);
     }
 
     pub fn recent_sync(&self) -> Vec<WsEnvelope> {

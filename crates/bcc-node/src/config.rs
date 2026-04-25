@@ -101,10 +101,25 @@ impl NodeConfig {
 
         let key_bytes = hex::decode(&raw.my_signing_key)
             .map_err(|e| NodeError::Config(format!("my_signing_key hex: {e}")))?;
-        let key_array: [u8; 32] = key_bytes
+        let mut key_array: [u8; 32] = key_bytes
             .try_into()
             .map_err(|_| NodeError::Config("my_signing_key must be 32 bytes".into()))?;
         let my_signing_key = SigningKey::from_bytes(&key_array);
+
+        // Zero raw key bytes — SigningKey holds the material from here on.
+        key_array.fill(0);
+
+        // Verify the signing key actually corresponds to the declared address.
+        // Prevents silent misconfiguration where address and key are mismatched.
+        let derived = bcc_core::types::address::Address::from_pubkey_bytes(
+            my_signing_key.verifying_key().as_bytes(),
+        );
+        if derived != my_address {
+            return Err(NodeError::Config(format!(
+                "my_signing_key does not match my_address: \
+                 key derives to {derived} but config declares {my_address}"
+            )));
+        }
 
         Ok(Self {
             listen_addr,

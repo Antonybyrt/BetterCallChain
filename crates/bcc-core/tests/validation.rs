@@ -31,7 +31,7 @@ fn test_bad_height() {
     let store  = MemoryStore::new();
     let parent = make_block(0, 0, [0u8; 32], 1000);
     let child  = make_block(5, 1, parent.hash(), 1001);
-    let err = validate_block(&child, &parent, &store, &store).unwrap_err();
+    let err = validate_block(&child, &parent, &store, &store, 5).unwrap_err();
     assert!(matches!(err, BlockValidationError::BadHeight));
 }
 
@@ -41,6 +41,6 @@ fn test_bad_parent_hash() {
     let store  = MemoryStore::new();
     let parent = make_block(0, 0, [0u8; 32], 1000);
     let child  = make_block(1, 1, [0xFFu8; 32], 1001);
-    let err = validate_block(&child, &parent, &store, &store).unwrap_err();
+    let err = validate_block(&child, &parent, &store, &store, 5).unwrap_err();
     assert!(matches!(err, BlockValidationError::BadParentHash));
 }

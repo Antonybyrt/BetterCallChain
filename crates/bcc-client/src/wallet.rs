@@ -1,8 +1,11 @@
-use bcc_core::types::{
-    address::Address,
-    transaction::{Transaction, TxInput, TxKind, TxOutRef, TxOutput},
+use bcc_core::{
+    types::{
+        address::Address,
+        transaction::{Transaction, TxInput, TxKind, TxOutRef, TxOutput},
+    },
+    validation::transaction::tx_signing_bytes,
 };
-use ed25519_dalek::{Signer, SigningKey};
+use ed25519_dalek::{Signature, Signer, SigningKey};
 
 use crate::{error::ClientError, rpc::UtxoItem};
 
@@ -59,7 +62,7 @@ pub fn select_coins(utxos: &[UtxoItem], target: u64) -> Result<CoinSelection, Cl
 ///
 /// Each `TxInput` is signed independently over:
 /// ```text
-/// bincode::serialize( (&kind, &outputs, &out_ref, input_amount) )
+/// serde_json::to_vec( (&kind, &outputs, &out_ref, input_amount) )
 /// ```
 /// This tuple binds the signature to:
 /// 1. `kind` — prevents replaying a `Transfer` signature in a `Stake` transaction.
@@ -102,26 +105,29 @@ pub fn build_transfer(
         });
     }
 
-    // Sign each input over (kind, outputs, out_ref, input_amount).
+    // Build inputs with placeholder signatures — needed to compute the
+    // canonical signing message via tx_signing_bytes (which reads out_refs).
     let mut inputs: Vec<TxInput> = Vec::with_capacity(utxos.len());
     for utxo in &utxos {
         let tx_hash_bytes: [u8; 32] = hex::decode(&utxo.tx_hash)?
             .try_into()
             .map_err(|_| ClientError::Serialization("tx_hash is not 32 bytes".into()))?;
 
-        let out_ref = TxOutRef { tx_hash: tx_hash_bytes, index: utxo.index };
-
-        let msg = bincode::serialize(&(&kind, &outputs, &out_ref, utxo.amount))
-            .map_err(|e| ClientError::Serialization(e.to_string()))?;
-
-        let signature = signing_key.sign(&msg);
-
         inputs.push(TxInput {
-            out_ref,
-            signature,
-            pubkey: signing_key.verifying_key(),
+            out_ref:   TxOutRef { tx_hash: tx_hash_bytes, index: utxo.index },
+            signature: Signature::from_bytes(&[0u8; 64]), // placeholder
+            pubkey:    signing_key.verifying_key(),
         });
     }
 
-    Ok(Transaction { kind, inputs, outputs })
+    let mut tx = Transaction { kind, inputs, outputs };
+
+    // Compute the canonical message (TxSigningData: kind + out_refs + outputs)
+    // and replace every placeholder with a real signature.
+    let msg = tx_signing_bytes(&tx);
+    for input in &mut tx.inputs {
+        input.signature = signing_key.sign(&msg);
+    }
+
+    Ok(tx)
 }

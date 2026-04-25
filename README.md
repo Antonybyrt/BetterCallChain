@@ -15,6 +15,23 @@ cd BetterCallChain
 docker compose up --build
 ```
 
+The visualizer is available at **http://localhost:9090** once the cluster is up.
+
+## Sending tokens
+
+```bash
+# Create a wallet (saves an encrypted keystore to ~/.bcc/keystore.json)
+bcc-client wallet new
+
+# Check your address
+bcc-client wallet show
+
+# Send tokens to an address
+bcc-client --rpc-url http://localhost:8081 send <recipient_address> <amount>
+```
+
+The `--rpc-url` defaults to `http://127.0.0.1:8080`. When using docker-compose the nodes listen on ports `8081–8085` on the host.
+
 ## Workspace
 
 | Crate | Role | Docs |

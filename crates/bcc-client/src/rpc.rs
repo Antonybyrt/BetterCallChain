@@ -40,6 +40,7 @@ pub struct TxResponse {
 ///
 /// All methods return `ClientError::Rpc` on transport failure and
 /// `ClientError::NodeError` if the server responds with a non-2xx status.
+#[derive(Clone)]
 pub struct RpcClient {
     client:   reqwest::Client,
     base_url: String,

@@ -11,6 +11,7 @@ services:
       - bcc_data1:/data
     ports:
       - "8081:8080"
+      - "9081:9080"
     networks:
       bcc-network:
         ipv4_address: 172.30.0.2
@@ -37,6 +38,7 @@ services:
       - bcc_data2:/data
     ports:
       - "8082:8080"
+      - "9082:9080"
     networks:
       bcc-network:
         ipv4_address: 172.30.0.3
@@ -61,6 +63,7 @@ services:
       - bcc_data3:/data
     ports:
       - "8083:8080"
+      - "9083:9080"
     networks:
       bcc-network:
         ipv4_address: 172.30.0.4
@@ -85,6 +88,7 @@ services:
       - bcc_data4:/data
     ports:
       - "8084:8080"
+      - "9084:9080"
     networks:
       bcc-network:
         ipv4_address: 172.30.0.5
@@ -109,6 +113,7 @@ services:
       - bcc_data5:/data
     ports:
       - "8085:8080"
+      - "9085:9080"
     networks:
       bcc-network:
         ipv4_address: 172.30.0.6
@@ -123,6 +128,35 @@ services:
       options:
         max-size: "50m"
         max-file: "5"
+
+  visualizer:
+    build:
+      context: .
+      dockerfile: tools/bcc-visualizer/Dockerfile
+    image: bcc-visualizer:latest
+    container_name: bcc-visualizer
+    command:
+      - bcc-visualizer
+      - --bind
+      - "0.0.0.0:9090"
+      - --debug-urls
+      - "ws://172.30.0.2:9080/debug,ws://172.30.0.3:9080/debug,ws://172.30.0.4:9080/debug,ws://172.30.0.5:9080/debug,ws://172.30.0.6:9080/debug"
+      - --node-ports
+      - "8081,8082,8083,8084,8085"
+    ports:
+      - "9090:9090"
+    networks:
+      bcc-network:
+        ipv4_address: 172.30.0.10
+    depends_on:
+      - node1
+      - node2
+      - node3
+      - node4
+      - node5
+    restart: unless-stopped
+    environment:
+      - RUST_LOG=bcc_visualizer=info
 
 volumes:
   bcc_data1:

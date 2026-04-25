@@ -15,7 +15,6 @@ path = "src/main.rs"
 aes-gcm = "0.10.3"
 argon2 = "0.5.3"
 bcc-core = { version = "0.1.0", path = "../bcc-core" }
-bincode = "1"
 clap = { version = "4.6.0", features = ["derive"] }
 ed25519-dalek = { version = "2.2.0", features = ["serde"] }
 hex = "0.4.3"
@@ -30,8 +29,9 @@ tokio = { version = "1.50.0", features = ["full"] }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 
+futures = "0.3"
+
 [dev-dependencies]
-futures     = "0.3"
 mockito     = "1.7.2"
 tempfile    = "3.27.0"
 tokio-test  = "0.4.5"

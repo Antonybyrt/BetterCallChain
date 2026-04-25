@@ -121,17 +121,26 @@ async fn wait_for_balance(node_idx: usize, address: &str, expected: u64, timeout
     }
 }
 
-/// Waits until every node's /chain/tip returns 200.
+/// Waits until every node's /chain/tip returns height >= 1.
+/// This guarantees the slot ticker has produced at least one block before tests run.
 async fn wait_for_cluster() {
     let deadline = Instant::now() + STARTUP_TIMEOUT;
     println!("[startup] Waiting for all nodes …");
     loop {
         let mut all_up = true;
         for (i, &port) in NODE_PORTS.iter().enumerate() {
-            if RpcClient::new(format!("http://127.0.0.1:{port}")).get_tip().await.is_err() {
-                println!("[startup] node{} (:{port}) not ready …", i + 1);
-                all_up = false;
-                break;
+            match RpcClient::new(format!("http://127.0.0.1:{port}")).get_tip().await {
+                Err(_) => {
+                    println!("[startup] node{} (:{port}) not ready …", i + 1);
+                    all_up = false;
+                    break;
+                }
+                Ok(tip) if tip.height < 1 => {
+                    println!("[startup] node{} (:{port}) at genesis — waiting for first block …", i + 1);
+                    all_up = false;
+                    break;
+                }
+                Ok(_) => {}
             }
         }
         if all_up { println!("[startup] All 5 nodes healthy!"); return; }
@@ -344,11 +353,19 @@ async fn test_single_transfer_propagates() {
     let resp = c1.post_tx(&tx).await.expect("POST /tx on node1");
     println!("  tx accepted → hash: {}", resp.tx_hash);
 
-    // Verify on all 5 nodes.
-    for i in 0..NODE_PORTS.len() {
-        let bal = wait_for_balance(i, recip_addr.as_str(), AMOUNT, TIMEOUT).await;
-        println!("  node{} → recipient balance = {bal}", i + 1);
-        assert_eq!(bal, AMOUNT, "node{} did not see the transfer", i + 1);
+    // Verify on all 5 nodes in parallel.
+    let addr_str = recip_addr.to_string();
+    let handles: Vec<_> = (0..NODE_PORTS.len()).map(|i| {
+        let addr = addr_str.clone();
+        tokio::spawn(async move {
+            let bal = wait_for_balance(i, &addr, AMOUNT, TIMEOUT).await;
+            (i + 1, bal)
+        })
+    }).collect();
+    for result in futures::future::join_all(handles).await {
+        let (node, bal) = result.expect("verify task panicked");
+        println!("  node{node} → recipient balance = {bal}");
+        assert_eq!(bal, AMOUNT, "node{node} did not see the transfer");
     }
     println!("[tx] single_transfer_propagates: PASS");
 }
@@ -356,42 +373,47 @@ async fn test_single_transfer_propagates() {
 /// Sends 5 independent transfers simultaneously — one per node — from the
 /// funder to 5 different recipients (no double-spend). Verifies that every
 /// recipient's balance is reconciled across all 5 nodes.
+///
+/// Uses `bcc_client::split::split_utxo` to create 5 independent confirmed UTXOs
+/// via binary-doubling (3 block-wait rounds instead of 4 sequential ones).
 async fn test_concurrent_sends_different_nodes() {
-    const AMOUNTS: [u64; 5]  = [11_000, 22_000, 33_000, 44_000, 55_000];
-    const TIMEOUT:  Duration = Duration::from_secs(60);
+    const AMOUNTS: [u64; 5] = [11_000, 22_000, 33_000, 44_000, 55_000];
+    const TIMEOUT: Duration = Duration::from_secs(60);
 
     println!("[tx] concurrent_sends_different_nodes ({} simultaneous txs) …", AMOUNTS.len());
 
     let funder      = funder_key();
     let funder_addr = key_to_address(&funder);
+    let c           = client_for(0);
 
-    // Fetch UTXOs once from node1, then build all txs locally.
-    let mut utxos = client_for(0).get_utxos(funder_addr.as_str()).await
+    // Pick the largest UTXO and split it into 5 independent UTXOs.
+    let mut all_utxos = c.get_utxos(funder_addr.as_str()).await
         .expect("GET /utxos for funder");
+    all_utxos.sort_unstable_by(|a, b| b.amount.cmp(&a.amount));
+    let input_utxo = all_utxos.into_iter().next().expect("funder has no UTXOs");
 
+    println!("[split] splitting funder UTXO ({}) into {} parts …", input_utxo.amount, AMOUNTS.len());
+    let utxos = bcc_client::split::split_utxo(&c, &funder, &funder_addr, input_utxo, AMOUNTS.len())
+        .await
+        .expect("split_utxo failed");
+    println!("[split] {} UTXOs ready", utxos.len());
+
+    assert!(
+        utxos.len() >= AMOUNTS.len(),
+        "funder has {} UTXOs after split, need {}", utxos.len(), AMOUNTS.len()
+    );
+
+    // Build each transaction spending one specific UTXO — no placeholder chaining.
     let mut txs = Vec::new();
     for (i, &amount) in AMOUNTS.iter().enumerate() {
         let recip_addr = key_to_address(&recipient_key(0x10 + i as u8));
 
-        let sel = wallet::select_coins(&utxos, amount)
-            .unwrap_or_else(|_| panic!("insufficient funds for transfer {i}"));
+        assert!(
+            utxos[i].amount >= amount,
+            "UTXO {i} has {} tokens but tx needs {amount}", utxos[i].amount
+        );
 
-        // Remove the spent UTXOs from our local view.
-        let spent: HashSet<(&str, u32)> = sel.selected.iter()
-            .map(|u| (u.tx_hash.as_str(), u.index)).collect();
-        utxos.retain(|u| !spent.contains(&(u.tx_hash.as_str(), u.index)));
-
-        // Re-add the change as a placeholder so the next iteration can spend it.
-        let total: u64 = sel.selected.iter().map(|u| u.amount).sum();
-        if total > amount {
-            utxos.push(bcc_client::rpc::UtxoItem {
-                tx_hash: format!("{:064x}", i), // unique placeholder
-                index:   0,
-                amount:  total - amount,
-            });
-        }
-
-        let tx = wallet::build_transfer(&funder, sel.selected, &recip_addr, amount, &funder_addr)
+        let tx = wallet::build_transfer(&funder, vec![utxos[i].clone()], &recip_addr, amount, &funder_addr)
             .expect("build_transfer");
         txs.push((tx, recip_addr, amount, i % NODE_PORTS.len()));
     }
@@ -417,13 +439,22 @@ async fn test_concurrent_sends_different_nodes() {
             .map(|r| r.expect("submit panicked"))
             .collect();
 
-    // Verify every recipient on every node.
+    // Verify every recipient on every node in parallel (5 addresses × 5 nodes = 25 checks).
+    let mut verify_handles = Vec::new();
     for (addr, amt) in &expected {
         for i in 0..NODE_PORTS.len() {
-            let bal = wait_for_balance(i, addr, *amt, TIMEOUT).await;
-            println!("  node{} | {addr} = {bal} (expected {amt})", i + 1);
-            assert_eq!(bal, *amt, "node{} did not reconcile transfer to {addr}", i + 1);
+            let addr = addr.clone();
+            let amt  = *amt;
+            verify_handles.push(tokio::spawn(async move {
+                let bal = wait_for_balance(i, &addr, amt, TIMEOUT).await;
+                (i + 1, addr, bal, amt)
+            }));
         }
+    }
+    for result in futures::future::join_all(verify_handles).await {
+        let (node, addr, bal, amt) = result.expect("verify task panicked");
+        println!("  node{node} | {addr} = {bal} (expected {amt})");
+        assert_eq!(bal, amt, "node{node} did not reconcile transfer to {addr}");
     }
     println!("[tx] concurrent_sends_different_nodes: PASS");
 }

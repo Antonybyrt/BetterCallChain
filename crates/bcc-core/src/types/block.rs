@@ -36,7 +36,7 @@ pub struct Block {
 impl Block {
     /// Computes the hash of this block's header (signature excluded by design).
     pub fn hash(&self) -> BlockHash {
-        let bytes = bincode::serialize(&self.header).expect("BlockHeader serialization is infallible");
+        let bytes = serde_json::to_vec(&self.header).expect("BlockHeader serialization is infallible");
         crate::crypto::hash::sha256d(&bytes)
     }
 
@@ -52,8 +52,9 @@ impl Block {
 
         while layer.len() > 1 {
             if layer.len() % 2 != 0 {
-                let last = *layer.last().expect("layer is non-empty");
-                layer.push(last);
+                if let Some(&last) = layer.last() {
+                    layer.push(last);
+                }
             }
             layer = layer
                 .chunks(2)

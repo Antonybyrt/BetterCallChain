@@ -1,5 +1,7 @@
 pub mod api;
 pub mod config;
+pub mod debug_event;
+pub mod debug_ws;
 pub mod error;
 pub mod genesis;
 pub mod ibd;

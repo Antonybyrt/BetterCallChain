@@ -8,23 +8,37 @@ name = "bcc-visualizer"
 path = "src/main.rs"
 
 [dependencies]
-axum          = { version = "0.8", features = ["ws"] }
-tower-http    = { version = "0.6", features = ["cors"] }
+# Async runtime
 tokio         = { version = "1", features = ["full"] }
 tokio-util    = { version = "0.7", features = ["io", "codec"] }
+
+# WebSocket server + client (pure tokio, no axum)
+tokio-tungstenite = { version = "0.26", features = ["rustls-tls-webpki-roots"] }
+futures           = "0.3"
+
+# Serialization
 serde         = { version = "1", features = ["derive"] }
 serde_json    = "1"
-regex         = "1"
-once_cell     = "1"
+
+# CLI
 clap          = { version = "4", features = ["derive"] }
+
+# Logging
 tracing       = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Time
 chrono        = { version = "0.4", features = ["serde"] }
+
+# HTTP client (for scenario execution)
 reqwest       = { version = "0.13", default-features = false, features = ["json", "rustls"] }
+
+# Error handling
 anyhow        = "1"
-futures       = "0.3"
-lru           = "0.12"
+
+# Blockchain crates
 bcc-core      = { path = "../../crates/bcc-core" }
 bcc-client    = { path = "../../crates/bcc-client" }
+bcc-node      = { path = "../../crates/bcc-node" }
 ed25519-dalek = { version = "2.2.0", features = ["serde"] }
 hex           = "0.4"

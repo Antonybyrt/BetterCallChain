@@ -12,7 +12,7 @@ use ed25519_dalek::Signer;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
 
-use crate::state::NodeState;
+use crate::{debug_event::DebugEvent, state::NodeState};
 
 /// Maximum transactions included in a single proposed block.
 const MAX_TXS_PER_BLOCK: usize = 512;
@@ -97,6 +97,22 @@ pub async fn run_slot_ticker(state: NodeState, cancel: CancellationToken) {
 
         let time_remaining = slot_end - now;
         debug!(slot, "slot tick");
+        state.emit(DebugEvent::SlotTick { slot: slot as u64, tip_height });
+
+        // Guard: if the current tip already belongs to this slot, a peer has already
+        // proposed a valid block.  Proposing again would create a competing fork.
+        let tip_already_this_slot = state.blocks
+            .get_by_height(tip_height)
+            .ok()
+            .flatten()
+            .map(|b| b.header.slot >= slot as u64)
+            .unwrap_or(false);
+
+        if tip_already_this_slot {
+            debug!(slot, tip_height, "slot already covered by existing block — skipping");
+            if !sleep_until_secs(slot_end, &cancel).await { return; }
+            continue;
+        }
 
         if let Some(proposer) = elect_proposer(slot as u64, &tip_hash, &validators) {
             if proposer.address == state.config.my_address
@@ -105,6 +121,10 @@ pub async fn run_slot_ticker(state: NodeState, cancel: CancellationToken) {
                 propose_block(&state, tip_height, tip_hash, slot as u64, now).await;
             } else {
                 debug!(slot, proposer = %proposer.address, "slot: not proposer, skipping");
+                state.emit(DebugEvent::SlotNotProposer {
+                    slot: slot as u64,
+                    elected_proposer: proposer.address.to_string(),
+                });
             }
         }
 
@@ -129,6 +149,7 @@ async fn propose_block(
         let mempool = state.mempool.lock().await;
         let mempool_size = mempool.len();
         info!(slot, mempool_size, "slot: draining mempool for block");
+        state.emit(DebugEvent::MempoolDrain { slot, mempool_size });
         mempool.drain(MAX_TXS_PER_BLOCK)
     };
 
@@ -142,7 +163,7 @@ async fn propose_block(
         proposer: state.config.my_address.clone(),
     };
 
-    let header_bytes = match bincode::serialize(&header) {
+    let header_bytes = match serde_json::to_vec(&header) {
         Ok(b) => b,
         Err(e) => {
             error!(err = %e, "slot_ticker: failed to serialize block header");
@@ -173,4 +194,11 @@ async fn propose_block(
     // Notify all peer tasks via the broadcast channel.
     let _ = state.new_block.send(block);
     info!(height, %hash, slot, txs = tx_count, proposer = %state.config.my_address, "proposed block");
+    state.emit(DebugEvent::BlockProposed {
+        height,
+        hash:     hash.clone(),
+        slot,
+        txs:      tx_count,
+        proposer: state.config.my_address.to_string(),
+    });
 }

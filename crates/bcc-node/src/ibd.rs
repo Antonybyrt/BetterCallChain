@@ -7,12 +7,18 @@ use tokio_util::codec::{Framed, LengthDelimitedCodec};
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 
+use bcc_core::validation::block::validate_block;
+
 use crate::{error::NodeError, p2p::protocol::Message, state::NodeState};
 
 const BATCH_TIMEOUT_SECS: u64 = 10;
 const MAX_CONSECUTIVE_TIMEOUTS: usize = 3;
 const MAX_FRAME_LEN: usize = 16 * 1024 * 1024;
 const BLOCKS_PER_REQUEST: u64 = 256;
+/// Retry IBD from scratch if all peers fail before we sync any block.
+/// Covers the Docker startup race where peers aren't ready yet.
+const MAX_IBD_RETRIES: usize = 5;
+const IBD_RETRY_DELAY_SECS: u64 = 1;
 
 /// Downloads the canonical chain from bootstrap peers until we are in sync.
 ///
@@ -35,14 +41,30 @@ pub async fn run_ibd(state: &NodeState, cancel: &CancellationToken) -> Result<()
         .map(|(h, _)| h)
         .unwrap_or(0);
 
-    let mut from_height = local_tip + 1;
+    let initial_from_height = local_tip + 1;
+    let mut from_height = initial_from_height;
     let mut peer_idx = 0;
     let mut consecutive_timeouts = 0;
+    let mut retry_count = 0;
 
     info!(from_height, "IBD starting");
 
     'outer: loop {
         if peer_idx >= peers.len() {
+            // If we haven't synced a single block yet, the peers were likely not
+            // ready (Docker startup race).  Wait and retry a few times.
+            if from_height == initial_from_height && retry_count < MAX_IBD_RETRIES {
+                retry_count += 1;
+                warn!(
+                    attempt = retry_count, max = MAX_IBD_RETRIES,
+                    delay = IBD_RETRY_DELAY_SECS,
+                    "IBD: all peers unavailable before syncing — retrying"
+                );
+                tokio::time::sleep(Duration::from_secs(IBD_RETRY_DELAY_SECS)).await;
+                peer_idx = 0;
+                consecutive_timeouts = 0;
+                continue 'outer;
+            }
             info!("IBD: all peers exhausted");
             break;
         }
@@ -124,6 +146,25 @@ pub async fn run_ibd(state: &NodeState, cancel: &CancellationToken) -> Result<()
                         }
                         Message::Blocks { blocks } => {
                             for block in &blocks {
+                                // Genesis block (height 0) has no parent to validate against.
+                                if block.header.height > 0 {
+                                    let parent_h = block.header.height - 1;
+                                    let parent = state
+                                        .blocks
+                                        .get_by_height(parent_h)
+                                        .map_err(NodeError::Store)?
+                                        .ok_or_else(|| NodeError::P2p(format!(
+                                            "IBD: parent block at height {} not found", parent_h
+                                        )))?;
+                                    validate_block(
+                                        block, &parent,
+                                        &*state.utxo, &*state.validators,
+                                        state.config.slot_duration_secs,
+                                    )
+                                    .map_err(|e| NodeError::Validation(format!(
+                                        "IBD: invalid block at height {}: {}", block.header.height, e
+                                    )))?;
+                                }
                                 state.blocks.insert(block).map_err(NodeError::Store)?;
                                 state.utxo.apply_block(block).map_err(NodeError::Store)?;
                             }

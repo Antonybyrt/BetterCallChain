@@ -36,7 +36,7 @@ pub enum ClientError {
     #[error("insufficient funds: have {have}, need {need}")]
     InsufficientFunds { have: u64, need: u64 },
 
-    /// Bincode serialization failed (e.g. when building the signing message).
+    /// Serde JSON serialization failed (e.g. when building the signing message).
     #[error("serialization: {0}")]
     Serialization(String),
 

@@ -69,7 +69,7 @@ fn make_spending_block(
 /// `insert` stores the block and `tip` reflects it; retrieval by height and hash works.
 #[test]
 fn insert_and_get() {
-    let store = SledStore::new_temporary();
+    let store = SledStore::new_temporary().unwrap();
     let (block, _) = make_coinbase_block(0, [0u8; 32], 100);
     let hash = block.hash();
 
@@ -83,7 +83,7 @@ fn insert_and_get() {
 /// `apply_block` updates the UTXO set; `rollback_block` restores the previous state.
 #[test]
 fn apply_and_rollback() {
-    let store = SledStore::new_temporary();
+    let store = SledStore::new_temporary().unwrap();
 
     let (block_a, out_a) = make_coinbase_block(0, [0u8; 32], 100);
     store.apply_block(&block_a).unwrap();
@@ -102,7 +102,7 @@ fn apply_and_rollback() {
 /// The crash sentinel must be absent after a successful `apply_block`.
 #[test]
 fn crash_sentinel_cleared() {
-    let store = SledStore::new_temporary();
+    let store = SledStore::new_temporary().unwrap();
     let (block, _) = make_coinbase_block(0, [0u8; 32], 50);
     store.apply_block(&block).unwrap();
     assert!(
